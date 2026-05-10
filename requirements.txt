@@ -1,0 +1,12 @@
+# PyBullet stack (primary, used by current Phase 1 environment)
+pybullet>=3.2.7
+gym-pybullet-drones>=2.1.0
+gymnasium>=1.0.0
+stable-baselines3>=2.0.0
+torch>=2.0.0
+numpy>=1.24.0
+scipy>=1.10.0
+transforms3d>=0.4.0
+
+# Optional: only needed if you run the legacy PX4 SITL environment
+# pymavlink>=2.4.40
