@@ -1,8 +1,8 @@
 """
-Test 2 — Fixed-gain baseline
-=============================
+Test 2 — Fixed-gain baseline (PyBullet)
+=========================================
 Purpose:
-    Measure drone stability with the default PX4 iris roll-rate gains and
+    Measure drone stability with the default roll-rate gains and
     zero agent action (gains never change). This is the reference performance
     that TD3 must beat.
 
@@ -12,7 +12,7 @@ Metrics recorded per step:
     - pitch (rad)
     - reward (from env reward function, so comparable to TD3 training signal)
 
-Summary saved to: tests/results/baseline_fixed.npz
+Summary saved to: tests/results/baseline_pybullet.npz
 
 Usage:
     cd ~/rl_pid_tuner && python tests/baseline_fixed.py
@@ -22,10 +22,10 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import numpy as np
-from envs import PX4GainTunerEnv
+from envs import PyBulletPIDTunerEnv
 
 EPISODES  = 3
-MAX_STEPS = 500   # full episode (50 s)
+MAX_STEPS = 500   # full episode
 RESULTS   = os.path.join(os.path.dirname(__file__), "results")
 os.makedirs(RESULTS, exist_ok=True)
 
@@ -33,7 +33,7 @@ ZERO_ACTION = np.zeros(3, dtype=np.float32)   # no gain change
 
 
 def run():
-    env = PX4GainTunerEnv(max_steps=MAX_STEPS, init_noise=0.0)
+    env = PyBulletPIDTunerEnv(max_steps=MAX_STEPS, init_noise=0.0)
 
     all_roll_rates = []
     all_rolls      = []
@@ -85,7 +85,7 @@ def run():
     rew = np.array(all_rewards)
 
     print("\n" + "="*55)
-    print("BASELINE (fixed default gains) — SUMMARY")
+    print("BASELINE (fixed default gains, PyBullet) — SUMMARY")
     print("="*55)
     print(f"Episodes run      : {EPISODES}")
     print(f"Crashes           : {sum(ep_crashes)}/{EPISODES}")
@@ -99,7 +99,7 @@ def run():
     print(f"reward     mean   : {rew.mean():+.5f}")
     print(f"reward     std    : {rew.std():.5f}")
 
-    out = os.path.join(RESULTS, "baseline_fixed.npz")
+    out = os.path.join(RESULTS, "baseline_pybullet.npz")
     np.savez(out,
              roll_rates=rr, rolls=ro, pitches=pi, rewards=rew,
              ep_lengths=np.array(ep_lengths),

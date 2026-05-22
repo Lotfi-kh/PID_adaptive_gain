@@ -1,0 +1,452 @@
+{
+  "metadata": {
+    "onnx_model": "actor_joint_1p05M_shared3D.onnx",
+    "input_shape": [
+      1,
+      13
+    ],
+    "output_shape": [
+      1,
+      3
+    ],
+    "input_dtype": "float32",
+    "output_range": [
+      -1.0,
+      1.0
+    ],
+    "DELTA_SCALE": [
+      0.034,
+      0.0034,
+      0.00017
+    ],
+    "KP_DEFAULT": 0.171,
+    "KI_DEFAULT": 0.0086,
+    "KD_DEFAULT": 0.00171,
+    "KP_BOUNDS": [
+      0.0,
+      1.72
+    ],
+    "KI_BOUNDS": [
+      0.0,
+      0.172
+    ],
+    "KD_BOUNDS": [
+      0.0,
+      0.0086
+    ],
+    "KP_ATT": 3.0,
+    "step_prog_deployment": 1.0,
+    "obs_layout": [
+      "obs[0]  roll_rad",
+      "obs[1]  pitch_rad",
+      "obs[2]  roll_rate_rad_s  (body frame: R.T @ omega_world)",
+      "obs[3]  pitch_rate_rad_s (body frame: R.T @ omega_world)",
+      "obs[4]  roll_rate_err  = KP_ATT*(-roll)  - roll_rate",
+      "obs[5]  pitch_rate_err = KP_ATT*(-pitch) - pitch_rate",
+      "obs[6]  kp_roll_norm  = Kp_roll  / 1.72",
+      "obs[7]  ki_roll_norm  = Ki_roll  / 0.172",
+      "obs[8]  kd_roll_norm  = Kd_roll  / 8.6e-3",
+      "obs[9]  kp_pitch_norm = Kp_pitch / 1.72  (== obs[6])",
+      "obs[10] ki_pitch_norm = Ki_pitch / 0.172 (== obs[7])",
+      "obs[11] kd_pitch_norm = Kd_pitch / 8.6e-3 (== obs[8])",
+      "obs[12] step_prog = step/max_steps  (hold at 1.0 in deployment)"
+    ],
+    "action_layout": [
+      "action[0] in [-1,1] -> dKp = action[0] * 3.4e-2",
+      "action[1] in [-1,1] -> dKi = action[1] * 3.4e-3",
+      "action[2] in [-1,1] -> dKd = action[2] * 1.7e-4"
+    ]
+  },
+  "vectors": [
+    {
+      "name": "zero_obs",
+      "description": "All states zero. Gains at default. step_prog=1.0 (deployment nominal).",
+      "obs": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        -0.0,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721,
+        1.0
+      ],
+      "action": [
+        1.0,
+        -0.99947691,
+        -1.0
+      ],
+      "delta_gains": {
+        "dKp": 0.034,
+        "dKi": -0.0033982215,
+        "dKd": -0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.205,
+        "Ki": 0.00520178,
+        "Kd": 0.00154
+      }
+    },
+    {
+      "name": "nominal_hover",
+      "description": "Tiny residual roll/pitch and rates. Realistic calm hover.",
+      "obs": [
+        0.02,
+        0.01,
+        0.05,
+        0.03,
+        -0.11,
+        -0.06,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721,
+        1.0
+      ],
+      "action": [
+        1.0,
+        -0.99858165,
+        -1.0
+      ],
+      "delta_gains": {
+        "dKp": 0.034,
+        "dKi": -0.0033951776,
+        "dKd": -0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.205,
+        "Ki": 0.00520482,
+        "Kd": 0.00154
+      }
+    },
+    {
+      "name": "roll_disturbance",
+      "description": "Roll impulse: roll=0.15 rad (8.6 deg), roll_rate=0.8 rad/s. Pitch calm.",
+      "obs": [
+        0.15000001,
+        0.01,
+        0.80000001,
+        0.05,
+        -1.25,
+        -0.08,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721,
+        1.0
+      ],
+      "action": [
+        -1.0,
+        -0.99999881,
+        -1.0
+      ],
+      "delta_gains": {
+        "dKp": -0.034,
+        "dKi": -0.0033999959,
+        "dKd": -0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.137,
+        "Ki": 0.0052,
+        "Kd": 0.00154
+      }
+    },
+    {
+      "name": "pitch_disturbance",
+      "description": "Pitch impulse: pitch=0.15 rad (8.6 deg), pitch_rate=0.8 rad/s. Roll calm.",
+      "obs": [
+        0.01,
+        0.15000001,
+        0.05,
+        0.80000001,
+        -0.08,
+        -1.25,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721,
+        1.0
+      ],
+      "action": [
+        -0.99896729,
+        0.99998587,
+        1.0
+      ],
+      "delta_gains": {
+        "dKp": -0.0339648879,
+        "dKi": 0.003399952,
+        "dKd": 0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.13703511,
+        "Ki": 0.01199995,
+        "Kd": 0.00188
+      }
+    },
+    {
+      "name": "combined_disturbance",
+      "description": "Both axes: roll=0.12/0.6 rad/s, pitch=0.10/0.5 rad/s.",
+      "obs": [
+        0.12,
+        0.1,
+        0.60000002,
+        0.5,
+        -0.95999998,
+        -0.80000001,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721,
+        1.0
+      ],
+      "action": [
+        -0.99999559,
+        0.99999952,
+        0.99852961
+      ],
+      "delta_gains": {
+        "dKp": -0.03399985,
+        "dKi": 0.0033999984,
+        "dKd": 0.00016975
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.13700015,
+        "Ki": 0.012,
+        "Kd": 0.00187975
+      }
+    },
+    {
+      "name": "high_rate_edge",
+      "description": "Near obs limits: large attitude and rates. Tests numerical robustness.",
+      "obs": [
+        0.5,
+        -0.40000001,
+        5.0,
+        -4.0,
+        -6.5,
+        5.19999981,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721,
+        1.0
+      ],
+      "action": [
+        -1.0,
+        -1.0,
+        1.0
+      ],
+      "delta_gains": {
+        "dKp": -0.034,
+        "dKi": -0.0034,
+        "dKd": 0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.137,
+        "Ki": 0.0052,
+        "Kd": 0.00188
+      }
+    },
+    {
+      "name": "adapted_gains",
+      "description": "Gains shifted after adaptation: Kp=0.30, Ki=0.015, Kd=2.5e-3. step_prog=0.5.",
+      "obs": [
+        0.08,
+        0.06,
+        0.30000001,
+        0.2,
+        -0.54000002,
+        -0.38,
+        0.1744186,
+        0.0872093,
+        0.29069766,
+        0.1744186,
+        0.0872093,
+        0.29069766,
+        0.5
+      ],
+      "action": [
+        1.0,
+        -0.92583144,
+        0.95754325
+      ],
+      "delta_gains": {
+        "dKp": 0.034,
+        "dKi": -0.0031478269,
+        "dKd": 0.0001627824
+      },
+      "gains_prev": {
+        "Kp": 0.3,
+        "Ki": 0.015,
+        "Kd": 0.0025
+      },
+      "gains_new": {
+        "Kp": 0.334,
+        "Ki": 0.01185217,
+        "Kd": 0.0026627824
+      }
+    },
+    {
+      "name": "start_of_episode",
+      "description": "step_prog=0.0. Tests network at episode start.",
+      "obs": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        -0.0,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0
+      ],
+      "action": [
+        0.99933791,
+        -0.54739451,
+        -1.0
+      ],
+      "delta_gains": {
+        "dKp": 0.033977489,
+        "dKi": -0.0018611413,
+        "dKd": -0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.20497749,
+        "Ki": 0.00673886,
+        "Kd": 0.00154
+      }
+    },
+    {
+      "name": "gains_near_lower_bound",
+      "description": "Gains near zero. Tests clip at lower bound.",
+      "obs": [
+        0.1,
+        0.08,
+        0.40000001,
+        0.34999999,
+        -0.69999999,
+        -0.58999997,
+        0.00290698,
+        0.00581395,
+        0.00581395,
+        0.00290698,
+        0.00581395,
+        0.00581395,
+        1.0
+      ],
+      "action": [
+        0.9984535,
+        1.0,
+        1.0
+      ],
+      "delta_gains": {
+        "dKp": 0.0339474189,
+        "dKi": 0.0034,
+        "dKd": 0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.005,
+        "Ki": 0.001,
+        "Kd": 5e-05
+      },
+      "gains_new": {
+        "Kp": 0.03894742,
+        "Ki": 0.0044,
+        "Kd": 0.00022
+      }
+    },
+    {
+      "name": "gains_near_upper_bound",
+      "description": "Gains near ceiling. Tests clip at upper bound.",
+      "obs": [
+        0.05,
+        0.04,
+        0.2,
+        0.18000001,
+        -0.34999999,
+        -0.30000001,
+        0.98837209,
+        0.97674417,
+        0.97674417,
+        0.98837209,
+        0.97674417,
+        0.97674417,
+        1.0
+      ],
+      "action": [
+        -1.0,
+        -1.0,
+        1.0
+      ],
+      "delta_gains": {
+        "dKp": -0.034,
+        "dKi": -0.0034,
+        "dKd": 0.00017
+      },
+      "gains_prev": {
+        "Kp": 1.7,
+        "Ki": 0.168,
+        "Kd": 0.0084
+      },
+      "gains_new": {
+        "Kp": 1.666,
+        "Ki": 0.1646,
+        "Kd": 0.00857
+      }
+    }
+  ]
+}

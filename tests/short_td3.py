@@ -40,7 +40,7 @@ def make_env():
         reward_w1       = 1.0,
         reward_w2       = 2.0,
         reward_w3       = 0.1,
-        reward_w4       = 0.5,
+        reward_w4       = 0.001,
         crash_penalty   = 50.0,
         stability_bonus = 200.0,
         init_noise      = 0.05,

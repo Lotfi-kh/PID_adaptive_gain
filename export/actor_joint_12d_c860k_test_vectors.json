@@ -1,0 +1,412 @@
+{
+  "metadata": {
+    "onnx_model": "actor_joint_12d_c860k.onnx",
+    "input_shape": [
+      1,
+      12
+    ],
+    "output_shape": [
+      1,
+      3
+    ],
+    "input_dtype": "float32",
+    "output_range": [
+      -1.0,
+      1.0
+    ],
+    "DELTA_SCALE": [
+      0.034,
+      0.0034,
+      0.00017
+    ],
+    "KP_DEFAULT": 0.171,
+    "KI_DEFAULT": 0.0086,
+    "KD_DEFAULT": 0.00171,
+    "obs_norm": {
+      "KP_NORM": 1.72,
+      "KI_NORM": 0.172,
+      "KD_NORM": 0.0086
+    },
+    "clamp_band": {
+      "KP": [
+        0.0855,
+        0.42750000000000005
+      ],
+      "KI": [
+        0.0043,
+        0.0215
+      ],
+      "KD": [
+        0.000855,
+        0.004275
+      ],
+      "CLAMP_LO_MULT": 0.5,
+      "CLAMP_HI_MULT": 2.5
+    },
+    "KP_ATT": 3.0,
+    "obs_layout": [
+      "obs[0]  roll_rad",
+      "obs[1]  pitch_rad",
+      "obs[2]  roll_rate_rad_s  (body frame)",
+      "obs[3]  pitch_rate_rad_s (body frame)",
+      "obs[4]  roll_rate_err  = KP_ATT*(-roll)  - roll_rate",
+      "obs[5]  pitch_rate_err = KP_ATT*(-pitch) - pitch_rate",
+      "obs[6]  kp_roll_norm  = Kp_roll  / 1.72",
+      "obs[7]  ki_roll_norm  = Ki_roll  / 0.172",
+      "obs[8]  kd_roll_norm  = Kd_roll  / 8.6e-3",
+      "obs[9]  kp_pitch_norm = Kp_pitch / 1.72  (== obs[6])",
+      "obs[10] ki_pitch_norm = Ki_pitch / 0.172 (== obs[7])",
+      "obs[11] kd_pitch_norm = Kd_pitch / 8.6e-3 (== obs[8])"
+    ],
+    "action_layout": [
+      "action[0] in [-1,1] -> dKp = action[0] * 3.4e-2",
+      "action[1] in [-1,1] -> dKi = action[1] * 3.4e-3",
+      "action[2] in [-1,1] -> dKd = action[2] * 1.7e-4"
+    ],
+    "note": "step_prog removed entirely (12-D model). obs is normalized by *_NORM; applied gains clip to clamp_band \u2014 these are distinct, do not conflate."
+  },
+  "vectors": [
+    {
+      "name": "zero_obs",
+      "description": "All states zero. Gains at default.",
+      "obs": [
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        -0.0,
+        -0.0,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721
+      ],
+      "action": [
+        0.05217141,
+        0.04973084,
+        0.00601356
+      ],
+      "delta_gains": {
+        "dKp": 0.0017738279,
+        "dKi": 0.0001690849,
+        "dKd": 1.0223e-06
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.17277383,
+        "Ki": 0.00876908,
+        "Kd": 0.0017110223
+      }
+    },
+    {
+      "name": "nominal_hover",
+      "description": "Tiny residual roll/pitch and rates. Realistic calm hover.",
+      "obs": [
+        0.02,
+        0.01,
+        0.05,
+        0.03,
+        -0.11,
+        -0.06,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721
+      ],
+      "action": [
+        0.21266551,
+        0.20672494,
+        -0.13488868
+      ],
+      "delta_gains": {
+        "dKp": 0.0072306274,
+        "dKi": 0.0007028648,
+        "dKd": -2.29311e-05
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.17823063,
+        "Ki": 0.00930286,
+        "Kd": 0.0016870689
+      }
+    },
+    {
+      "name": "roll_disturbance",
+      "description": "Roll impulse: roll=0.15 rad (8.6 deg), roll_rate=0.8 rad/s. Pitch calm.",
+      "obs": [
+        0.15000001,
+        0.01,
+        0.80000001,
+        0.05,
+        -1.25,
+        -0.08,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721
+      ],
+      "action": [
+        1.0,
+        -0.99999982,
+        -0.42290732
+      ],
+      "delta_gains": {
+        "dKp": 0.034,
+        "dKi": -0.0033999994,
+        "dKd": -7.18942e-05
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.205,
+        "Ki": 0.0052,
+        "Kd": 0.0016381058
+      }
+    },
+    {
+      "name": "pitch_disturbance",
+      "description": "Pitch impulse: pitch=0.15 rad (8.6 deg), pitch_rate=0.8 rad/s. Roll calm.",
+      "obs": [
+        0.01,
+        0.15000001,
+        0.05,
+        0.80000001,
+        -0.08,
+        -1.25,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721
+      ],
+      "action": [
+        1.0,
+        -1.0,
+        -1.0
+      ],
+      "delta_gains": {
+        "dKp": 0.034,
+        "dKi": -0.0034,
+        "dKd": -0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.205,
+        "Ki": 0.0052,
+        "Kd": 0.00154
+      }
+    },
+    {
+      "name": "combined_disturbance",
+      "description": "Both axes: roll=0.12/0.6 rad/s, pitch=0.10/0.5 rad/s.",
+      "obs": [
+        0.12,
+        0.1,
+        0.60000002,
+        0.5,
+        -0.95999998,
+        -0.80000001,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721
+      ],
+      "action": [
+        1.0,
+        -1.0,
+        -0.98468179
+      ],
+      "delta_gains": {
+        "dKp": 0.034,
+        "dKi": -0.0034,
+        "dKd": -0.0001673959
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.205,
+        "Ki": 0.0052,
+        "Kd": 0.0015426041
+      }
+    },
+    {
+      "name": "high_rate_edge",
+      "description": "Near obs limits: large attitude and rates. Numerical robustness.",
+      "obs": [
+        0.5,
+        -0.40000001,
+        5.0,
+        -4.0,
+        -6.5,
+        5.19999981,
+        0.0994186,
+        0.05,
+        0.19883721,
+        0.0994186,
+        0.05,
+        0.19883721
+      ],
+      "action": [
+        -1.0,
+        -1.0,
+        -1.0
+      ],
+      "delta_gains": {
+        "dKp": -0.034,
+        "dKi": -0.0034,
+        "dKd": -0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.171,
+        "Ki": 0.0086,
+        "Kd": 0.00171
+      },
+      "gains_new": {
+        "Kp": 0.137,
+        "Ki": 0.0052,
+        "Kd": 0.00154
+      }
+    },
+    {
+      "name": "adapted_gains",
+      "description": "Gains shifted mid-adaptation, well inside the clamp band: Kp=0.30, Ki=0.015, Kd=2.5e-3.",
+      "obs": [
+        0.08,
+        0.06,
+        0.30000001,
+        0.2,
+        -0.54000002,
+        -0.38,
+        0.1744186,
+        0.0872093,
+        0.29069766,
+        0.1744186,
+        0.0872093,
+        0.29069766
+      ],
+      "action": [
+        0.9999553,
+        0.60169482,
+        -0.84349817
+      ],
+      "delta_gains": {
+        "dKp": 0.0339984801,
+        "dKi": 0.0020457624,
+        "dKd": -0.0001433947
+      },
+      "gains_prev": {
+        "Kp": 0.3,
+        "Ki": 0.015,
+        "Kd": 0.0025
+      },
+      "gains_new": {
+        "Kp": 0.33399848,
+        "Ki": 0.01704576,
+        "Kd": 0.0023566053
+      }
+    },
+    {
+      "name": "gains_at_lower_clamp",
+      "description": "Gains AT the new safety-clamp floor (Kp/Ki/Kd MIN). Tests clip at the lower clamp bound.",
+      "obs": [
+        0.1,
+        0.08,
+        0.40000001,
+        0.34999999,
+        -0.69999999,
+        -0.58999997,
+        0.0497093,
+        0.025,
+        0.0994186,
+        0.0497093,
+        0.025,
+        0.0994186
+      ],
+      "action": [
+        1.0,
+        -1.0,
+        1.0
+      ],
+      "delta_gains": {
+        "dKp": 0.034,
+        "dKi": -0.0034,
+        "dKd": 0.00017
+      },
+      "gains_prev": {
+        "Kp": 0.0855,
+        "Ki": 0.0043,
+        "Kd": 0.000855
+      },
+      "gains_new": {
+        "Kp": 0.1195,
+        "Ki": 0.0043,
+        "Kd": 0.001025
+      }
+    },
+    {
+      "name": "gains_at_upper_clamp",
+      "description": "Gains AT the new safety-clamp ceiling (Kp/Ki/Kd MAX). Tests clip at the upper clamp bound.",
+      "obs": [
+        0.05,
+        0.04,
+        0.2,
+        0.18000001,
+        -0.34999999,
+        -0.30000001,
+        0.24854651,
+        0.125,
+        0.49709302,
+        0.24854651,
+        0.125,
+        0.49709302
+      ],
+      "action": [
+        -0.48216709,
+        -0.78720242,
+        -0.93056625
+      ],
+      "delta_gains": {
+        "dKp": -0.0163936812,
+        "dKi": -0.0026764882,
+        "dKd": -0.0001581963
+      },
+      "gains_prev": {
+        "Kp": 0.42750000000000005,
+        "Ki": 0.0215,
+        "Kd": 0.004275
+      },
+      "gains_new": {
+        "Kp": 0.41110632,
+        "Ki": 0.01882351,
+        "Kd": 0.0041168037
+      }
+    }
+  ]
+}

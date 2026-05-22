@@ -1,0 +1,4 @@
+gcc -O2 -Wall -Wextra -I. -c -o actor_wrapper.o actor_wrapper.c
+gcc -O2 -Wall -Wextra -I. -c -o gain_updater.o gain_updater.c
+gcc -O2 -Wall -Wextra -I. -c -o test_harness.o test_harness.c
+gcc -o test_host actor_wrapper.o gain_updater.o test_harness.o -lm
