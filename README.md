@@ -1,189 +1,93 @@
-# RL Adaptive PID Tuner — Phase 1 (PyBullet)
+# PID_adaptive_gain
 
-An RL agent (TD3) that **tunes the PID gains of a roll-rate inner loop online**, while a
-conventional PID controller stays in charge of the actual motor commands.
-The drone is a Crazyflie 2.0 (CF2X) simulated in PyBullet via
-[gym-pybullet-drones](https://github.com/utiasDSL/gym-pybullet-drones).
+Training and evaluation code for the adaptive PID tuning system I developed for
+my master's thesis. A small TD3 reinforcement learning policy adjusts the
+inner-loop rate PID gains of a quadrotor online, while the PID controller
+itself is left in place. The agent only moves the gains.
 
-Long-term goal: export the trained actor (10 → 256 → 256 → 3 MLP) to ONNX →
-STM32Cube.AI → PX4 module on a Pixhawk STM32H7. Phase 1 focuses only on
-training in PyBullet.
+The platform is an F450 quadrotor. Training runs in PyBullet. Validation runs
+in Gazebo with PX4 SITL. The PX4 firmware module that runs the trained policy
+on the drone lives in a separate repository.
 
----
+## The deployed model
 
-## What is implemented
+The model under `results/frozen_joint_12d_c860k/` is the one used for all
+results in the thesis.
 
-| Component | File | Status |
-|---|---|---|
-| PyBullet PID-tuner Gymnasium env | `envs/pybullet_pid_tuner_env.py` | **Working, tested** |
-| TD3 short-run trainer            | `tests/short_td3.py`             | **Working** (10k-step run completes in ~52 s) |
-| Full TD3 trainer with run dirs   | `train.py`                       | **Working** (`--env pybullet`) |
-| Legacy PX4 SITL env (kept for later deployment work) | `envs/px4_gain_tuner_env.py` | Working but requires PX4 SITL + Gazebo |
+- Observation: 12 floats. Roll and pitch, body roll-rate and pitch-rate,
+  the two rate errors, and the current normalised gains for both axes
+  (Kp, Ki, Kd for roll and for pitch).
+- Action: 3 floats in [-1, 1], shared between roll and pitch. They are added
+  to the running gains after a fixed scaling: `a[0]*3.4e-2` to Kp,
+  `a[1]*3.4e-3` to Ki, `a[2]*1.7e-4` to Kd. A full-scale action of 1.0
+  therefore moves a gain by 2% of its allowed range in a single control step.
+- Network: Linear(12,64), ReLU, Linear(64,64), ReLU, Linear(64,3), Tanh.
+  5187 parameters.
+- Gain bounds: Kp in [0, 1.72], Ki in [0, 0.172], Kd in [0, 8.6e-3].
+- Trained for 860,000 steps.
 
-Hooks already wired:
-- 3-dim action: `[ΔKp, ΔKi, ΔKd]` for the **roll-rate** loop only
-- 10-dim observation: `[roll, pitch, roll_rate, pitch_rate, roll_rate_err, pitch_rate_err, Kp_n, Ki_n, Kd_n, step_progress]`
-- Reward: `-w1·att² - w2·rate² - w3·Δgain² - w4·oscillation²` + crash penalty / stability bonus
-- Conservative gain bounds (Kp ∈ [0, 2e-3], Ki ∈ [0, 2e-4], Kd ∈ [0, 1e-5])
-  with safe defaults that hover stably under noise without RL
-- Roll-only Phase 1: pitch and yaw rate loops use **fixed** PID gains
-- Altitude hold via fixed PD on z
+On a 48-condition disturbance grid (4 noise levels x 4 magnitudes x 3 axes,
+20 episodes each, 960 rollouts total) this policy beats the fixed-gain
+baseline in 42 of the 48 conditions. The peak angular rate is reduced by
+55.1% on average and the recovery time by 54.2%, with zero crashes across
+the 960 rollouts.
 
----
+## Repo layout
 
-## What still remains (NOT yet implemented)
+    envs/                              training environment
+    train.py                           TD3 trainer
+    tests/                             smoke runs and the fixed-gain baseline
+    eval_stable_hover.py               hover-time inactivity check
+    eval_sustained.py                  sustained constant-torque evaluation
+    eval_disturbance.py                transient disturbance evaluation
+    run_disturbance_grid.py            48-condition grid runner
+    run_aggressive_eval.py             where the headline 42/48 numbers come from
+    make_thesis_figs.py                generates the chapter 4 figures
+    results/frozen_joint_12d_c860k/    deployed model (.zip, .onnx, summary)
+    export/                            ONNX export, test vectors, generated STM32 C code
+    wrapper/                           host-side wrapper around the ONNX network
+    sitl/                              PX4 SITL helpers and the gain injector
 
-Be aware before reading further: these scripts are referenced by my
-earlier notes but are **not in this repo yet**. They still need to be ported
-from the legacy PX4 versions.
+`export/deployment_contract.md` is the reference for the firmware side. It
+lists the observation layout, the gain update rule, the clipping bounds and
+the safety fallbacks that have to live outside the ONNX graph.
 
-| Missing | Workaround for now |
-|---|---|
-| **PyBullet baseline runner** (`tests/baseline_pb.py`) | Use `tests/short_td3.py` and look at `monitor.csv`; the legacy `tests/baseline_fixed.py` only runs against the PX4 env |
-| **PyBullet baseline-vs-RL comparison** (`tests/compare_pb.py`) | Same — `tests/compare_logs.py` only loads PX4 baseline data |
-| **Evaluation script for the PyBullet env** | `evaluate.py` exists but currently imports `PX4GainTunerEnv`. Needs a one-line swap to `PyBulletPIDTunerEnv` to be useful here |
-| **Training-curve plot helper** | None — read `monitor.csv` manually or use TensorBoard via `tensorboard --logdir runs/` |
-| **Multi-axis (pitch + yaw) tuning** | Out of Phase 1 scope by design — the env code is structured so adding more action dims is mechanical |
+## Install
 
-The legacy PX4 helper scripts (`tests/smoke_random.py`, `tests/baseline_fixed.py`,
-`tests/compare_logs.py`, `evaluate.py`) are kept because they will be useful
-once we move to the PX4 deployment phase, but **none of them works against
-the PyBullet env without modification**.
+Python 3.10 or newer.
 
----
+    pip install -r requirements.txt
 
-## Setup
+PyBullet is CPU bound, so there is no real benefit to running this on GPU.
 
-```bash
-# Conda or venv with Python 3.10+
-pip install -r requirements.txt
-```
+## Train
 
-That installs PyBullet, gym-pybullet-drones, gymnasium, stable-baselines3,
-PyTorch (CPU is recommended — see note below), and numpy/scipy.
+    python train.py --env pybullet --steps 1000000
 
-**GPU note:** the actor is small (~70 k params). On a GTX 1660 Ti the GPU
-update is ~0.9× CPU speed because PyBullet (CPU-bound) is the real
-bottleneck. Stick with `device="cpu"` unless you switch to vectorized envs.
+Checkpoints and TensorBoard logs go under `runs/<timestamp>/`. Checkpoints are
+written every 10,000 steps and evaluations every 20,000.
 
----
+## Evaluate the deployed model
 
-## How to run the PyBullet environment
+    python eval_stable_hover.py \
+        --model results/frozen_joint_12d_c860k/td3_pid_860000_steps.zip
+    python eval_sustained.py \
+        --model results/frozen_joint_12d_c860k/td3_pid_860000_steps.zip
+    python run_disturbance_grid.py \
+        --model results/frozen_joint_12d_c860k/td3_pid_860000_steps.zip
 
-Smoke-test (1 episode, random actions, no training):
+Each script has its own argparse, so `--help` will list its options.
 
-```python
-from envs import PyBulletPIDTunerEnv
-import numpy as np
+## Deployment
 
-env = PyBulletPIDTunerEnv(max_steps=200, init_noise=0.05)
-obs, info = env.reset(seed=0)
-for _ in range(200):
-    action = np.random.uniform(-1, 1, 3).astype(np.float32)
-    obs, reward, terminated, truncated, info = env.step(action)
-    if terminated or truncated:
-        break
-env.close()
-```
+The ONNX file at `results/frozen_joint_12d_c860k/actor_joint_12d_c860k.onnx`
+is what STM32Cube.AI consumes. The generated C code is in
+`export/stm32_c_code_12d_c860k/`. Host-side bit-exactness of the ONNX network
+against the original PyTorch model can be re-checked with
+`export/verify_actor_onnx.py`. The PX4 module that calls this network on the
+flight controller is in the companion repository.
 
-The env runs at **~2,900 steps/sec** on CPU.
+## Thesis
 
----
-
-## How to launch training
-
-Short sanity-check run (10k steps, ~1 minute):
-
-```bash
-python tests/short_td3.py --steps 10000
-```
-
-Outputs to `tests/results/short_td3/` (Monitor CSV, TensorBoard logs,
-final model `td3_short_final.zip`).
-
-Full training run (1M steps, ~6 minutes on CPU):
-
-```bash
-python train.py --env pybullet --steps 1000000
-```
-
-Outputs to `runs/<timestamp>/` (checkpoints every 10k steps, eval every 20k
-steps, best model saved separately).
-
-To monitor live:
-
-```bash
-tensorboard --logdir runs/
-```
-
----
-
-## How to run evaluation
-
-There is **no PyBullet-native evaluation script in the repo yet**. The two
-manual paths that work today:
-
-1. **Inspect the Monitor CSV** at
-   `tests/results/short_td3/monitor.csv` (or `runs/<timestamp>/logs/monitor.csv`)
-   — columns are reward `r`, episode length `l`, wall-clock `t`.
-
-2. **Roll out a saved model by hand**:
-
-   ```python
-   from stable_baselines3 import TD3
-   from envs import PyBulletPIDTunerEnv
-   import numpy as np
-
-   env   = PyBulletPIDTunerEnv(max_steps=500, init_noise=0.05)
-   model = TD3.load("runs/<timestamp>/best_model/best_model.zip", env=env)
-
-   obs, _ = env.reset(seed=0)
-   total_rew = 0.0
-   for _ in range(500):
-       action, _ = model.predict(obs, deterministic=True)
-       obs, r, term, trunc, info = env.step(action)
-       total_rew += r
-       if term or trunc: break
-   print(f"reward={total_rew:.1f}  Kp={info['Kp']:.4e}  Ki={info['Ki']:.4e}  Kd={info['Kd']:.4e}")
-   env.close()
-   ```
-
-A proper `tests/baseline_pb.py` + `tests/compare_pb.py` pair is the next
-thing to add — see the "What still remains" table above.
-
----
-
-## Repository layout
-
-```
-envs/
-  __init__.py                   exports both envs
-  pybullet_pid_tuner_env.py     ← Phase 1 environment (use this)
-  px4_gain_tuner_env.py         legacy PX4 SITL env
-tests/
-  short_td3.py                  10k-step TD3 sanity run on PyBullet env
-  smoke_random.py               legacy PX4 smoke test
-  baseline_fixed.py             legacy PX4 baseline (NOT ported to PyBullet)
-  compare_logs.py               legacy PX4 baseline-vs-TD3 comparison (NOT ported)
-train.py                        full TD3 trainer, --env pybullet|px4
-evaluate.py                     legacy — uses PX4 env, NOT yet PyBullet
-requirements.txt
-```
-
----
-
-## Locked Phase 1 design choices
-
-These are intentional and shouldn't drift without a discussion:
-
-- **One axis only**: roll-rate inner loop. Pitch/yaw rate loops use fixed
-  defaults. RL action stays 3-dim until a measurable Phase 1 improvement
-  is shown.
-- **Tune gains, not motors**: the action is `[ΔKp, ΔKi, ΔKd]`. The actual
-  torques and RPMs are produced by a conventional PID + inverse mixer.
-- **Small actor**: 256×256 MLP (~70 k params), well under the
-  STM32Cube.AI / Pixhawk H7 envelope.
-- **PyBullet now, PX4 later**: PX4+Gazebo proved too slow and unreliable
-  for the deadline (~25 s per env reset). PyBullet runs ~2,900 steps/sec.
-  Deployment to PX4 happens after the policy is trained, via ONNX →
-  STM32Cube.AI → custom PX4 module.
+Chapter 3 of the thesis describes the method and chapter 4 reports the
+results.
