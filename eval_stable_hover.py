@@ -1,14 +1,14 @@
 """
-eval_stable_hover.py — Decisive offline validation for the joint PID-tuner policy
-=================================================================================
+eval_stable_hover.py, Decisive offline validation for the joint PID-tuner policy
+
 Three criteria, all computed offline from a trained TD3 .zip (no SITL needed):
 
-  1. stable-hover mean|action|  — feed real captured SITL stable-hover obs
+  1. stable-hover mean|action| , feed real captured SITL stable-hover obs
      (results/observer_*.csv) through the deterministic policy. Target < 0.15.
      A good policy outputs ~0 (no gain change) when the drone is already stable.
 
-  2. step_prog sensitivity      — REMOVED. step_prog is no longer an observation
-     (12-D obs). Invariance is now guaranteed by construction — there is no
+  2. step_prog sensitivity     , REMOVED. step_prog is no longer an observation
+     (12-D obs). Invariance is now guaranteed by construction, there is no
      input to sweep. Only the 12 real-state columns (obs_00..obs_11) are read
      from the captured CSV; the legacy obs_12 column is ignored.
 
@@ -51,7 +51,7 @@ def ckpt_step(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--run", default=None, help="runs/<ts> dir — sweep all checkpoints + final")
+    ap.add_argument("--run", default=None, help="runs/<ts> dir, sweep all checkpoints + final")
     ap.add_argument("--model", default=None, help="single .zip to evaluate")
     ap.add_argument("--csv", default=DEFAULT_CSV, help="captured stable-hover obs CSV")
     ap.add_argument("--target", type=float, default=0.15)
@@ -88,7 +88,7 @@ def main():
     print(f"BEST by stable-hover mean|action|:  {os.path.basename(best[4])}  "
           f"(step={best[0]})  mean|a|={best[2]:.4f}")
     print("=" * 86)
-    print("[EVAL] step_prog sensitivity: N/A — removed from observation (12-D). "
+    print("[EVAL] step_prog sensitivity: N/A, removed from observation (12-D). "
           "Invariance guaranteed by construction.")
 
 

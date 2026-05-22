@@ -1,24 +1,24 @@
 """
-eval_sustained.py — Sustained constant-torque disturbance evaluation
-=====================================================================
+eval_sustained.py, Sustained constant-torque disturbance evaluation
+
 The disturbance grid (run_disturbance_grid.py) only applies a 5-step transient
-kick. A transient is rejected by Kp/Kd alone — it tells you NOTHING about
+kick. A transient is rejected by Kp/Kd alone, it tells you NOTHING about
 integral action. This script applies a CONSTANT torque held for hundreds of
 steps, which is the only test that exposes a collapsed Ki:
 
-  control theory — under a constant disturbance, a P/D controller settles at a
-  non-zero steady-state error ≈ disturbance / Kp. Only the I-term drives that
-  error to zero. So if a policy has driven Ki→0, it MUST hold a standing tilt
+  control theory, under a constant disturbance, a P/D controller settles at a
+  non-zero steady-state error about  disturbance / Kp. Only the I-term drives that
+  error to zero. So if a policy has driven Ki->0, it MUST hold a standing tilt
   under sustained torque, while the fixed-gain baseline (default Ki) nulls it.
 
 Episode layout (500 steps @ 48 Hz):
     [0,100)    settle, no torque
-    [100,400)  SUSTAINED constant torque   (300 steps ≈ 6.25 s)
-    [400,500)  torque removed → recovery measured here
+    [100,400)  SUSTAINED constant torque   (300 steps about  6.25 s)
+    [400,500)  torque removed -> recovery measured here
   steady-state window = [300,400): last 2 s of the sustained phase, long after
-  the initial transient — this is where a standing tilt is read off.
+  the initial transient, this is where a standing tilt is read off.
 
-Conditions: low/med × roll/pitch, plus combined-medium roll+pitch.
+Conditions: low/med x roll/pitch, plus combined-medium roll+pitch.
 
 Subjects (default): fixed-gain baseline + the 3 models under question.
 
@@ -38,7 +38,7 @@ from envs import PyBulletPIDTunerEnv
 CTRL_FREQ   = 48
 MAX_STEPS   = 500
 DIST_STEP   = 100               # torque on at step 100
-DIST_DUR    = 300               # … held for 300 steps → off at step 400
+DIST_DUR    = 300               # … held for 300 steps -> off at step 400
 SS_LO, SS_HI = 300, 400         # steady-state window (last 2 s of sustained)
 REC_THRESH  = 0.10              # rad/s
 REC_WINDOW  = 10                # consecutive steps below threshold
@@ -48,7 +48,7 @@ KI_DEF = PyBulletPIDTunerEnv.KI_DEFAULT
 KD_DEF = PyBulletPIDTunerEnv.KD_DEFAULT
 KI_COLLAPSE = 0.10 * KI_DEF     # Ki below this ⇒ "collapsed"
 
-# (label, dist_axis, magnitude N·m)
+# (label, dist_axis, magnitude N.m)
 CONDITIONS = [
     ("low_roll",      "roll",  0.043),
     ("low_pitch",     "pitch", 0.043),
@@ -111,7 +111,7 @@ def rollout(env, model, dist_axis, n_episodes, seed):
         if hi > SS_LO:
             ss_roll.append(float(ra[SS_LO:hi].mean()))
             ss_pitch.append(float(pa[SS_LO:hi].mean()))
-        else:                       # crashed before steady state → worst case
+        else:                       # crashed before steady state -> worst case
             ss_roll.append(float(ra.max()) if ra.size else np.nan)
             ss_pitch.append(float(pa.max()) if pa.size else np.nan)
 
@@ -167,11 +167,11 @@ def main():
 
     for lbl, pth in models:
         if not os.path.isfile(pth):
-            raise SystemExit(f"[SUSTAINED] model not found: {lbl} → {pth}")
+            raise SystemExit(f"[SUSTAINED] model not found: {lbl} -> {pth}")
 
     os.makedirs(args.out_dir, exist_ok=True)
 
-    print(f"\n[SUSTAINED] Constant-torque rejection — does Ki=0 actually hurt?")
+    print(f"\n[SUSTAINED] Constant-torque rejection, does Ki=0 actually hurt?")
     print(f"[SUSTAINED] Episode: settle[0,{DIST_STEP}) | TORQUE[{DIST_STEP},{DIST_STEP+DIST_DUR}) "
           f"| recover[{DIST_STEP+DIST_DUR},{MAX_STEPS})")
     print(f"[SUSTAINED] Steady-state window = [{SS_LO},{SS_HI}) | episodes={args.episodes}")
@@ -202,8 +202,8 @@ def main():
         )
 
         emit("=" * 108)
-        emit(f"CONDITION: {cond}   (axis={dist_axis}, constant torque={mag:.3f} N·m, "
-             f"held {DIST_DUR} steps ≈ {DIST_DUR/CTRL_FREQ:.2f} s)")
+        emit(f"CONDITION: {cond}   (axis={dist_axis}, constant torque={mag:.3f} N.m, "
+             f"held {DIST_DUR} steps about  {DIST_DUR/CTRL_FREQ:.2f} s)")
         emit("=" * 108)
         emit(f"{'subject':<14}{'final Kp':>9}{'final Ki':>10}{'final Kd':>10}"
              f"{'Ki=0?':>7}{'ssRoll°':>9}{'ssPitch°':>9}"
@@ -223,15 +223,15 @@ def main():
         env.close()
         emit("")
 
-    # ── Verdict ────────────────────────────────────────────────────────────────
+
     emit("=" * 108)
     emit("READING THIS TABLE")
     emit("=" * 108)
     emit("• ssRoll°/ssPitch° = standing tilt during the LAST 2 s of constant torque.")
     emit("  Baseline keeps default Ki and should null it to a small residual.")
     emit("  A model with Ki=0 (YES) must hold a LARGER standing tilt on the")
-    emit("  disturbed axis — that gap is the cost of a collapsed Ki.")
-    emit("• If a Ki=0 model's ssError ≈ baseline's, then Ki=0 does NOT hurt in")
+    emit("  disturbed axis, that gap is the cost of a collapsed Ki.")
+    emit("• If a Ki=0 model's ssError about  baseline's, then Ki=0 does NOT hurt in")
     emit("  practice (Kp is high enough to mask it). If it is much larger, Ki=0")
     emit("  is a real sustained-rejection defect and must be fixed before deploy.")
     emit("• recov = steps to settle after torque removal; crash = episodes lost.")
@@ -240,7 +240,7 @@ def main():
     out = os.path.join(args.out_dir, "sustained_summary.txt")
     with open(out, "w") as f:
         f.write("\n".join(report) + "\n")
-    print(f"\n[SUSTAINED] Summary saved → {out}")
+    print(f"\n[SUSTAINED] Summary saved -> {out}")
 
 
 if __name__ == "__main__":

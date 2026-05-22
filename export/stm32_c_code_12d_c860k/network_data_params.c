@@ -25,8 +25,6 @@ ai_handle g_network_activations_table[1 + 2] = {
 };
 
 
-
-
 /**  Weights Section  ********************************************************/
 AI_ALIGNED(32)
 const ai_u64 s_network_weights_array_u64[2594] = {

@@ -35,7 +35,6 @@ AI_API_DECLARE_BEGIN
 extern const ai_u64 s_network_weights_array_u64[2594];
 
 
-
 /*!
  * @brief Get network activations buffer initialized struct.
  * @ingroup network_data

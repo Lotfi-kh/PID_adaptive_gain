@@ -1,16 +1,16 @@
 """
-run_disturbance_grid.py — Disturbance-rejection evaluation grid
-================================================================
+run_disturbance_grid.py, Disturbance-rejection evaluation grid
+
 Runs eval_disturbance.py for all combinations of:
-    init_noise     ∈ {0.05, 0.10, 0.15}
-    dist_magnitude ∈ {4.3e-2, 1.7e-1}   (low / medium, scaled for F450 Ixx=0.012 kg·m²)
+    init_noise     in {0.05, 0.10, 0.15}
+    dist_magnitude in {4.3e-2, 1.7e-1}   (low / medium, scaled for F450 Ixx=0.012 kg.m²)
 
 Each condition: 10 deterministic episodes, dist_step=150, dist_duration=5.
 Results saved per-condition under --out-dir.
 A summary table + conclusion is printed and saved to <out_dir>/grid_summary.txt.
 
 Usage:
-    cd ~/rl_pid_tuner
+    # run from the repo root
     python run_disturbance_grid.py --model runs/<ts>/best_model/best_model.zip
 
     # Re-generate summary from existing NPZ files without re-running evaluation:
@@ -36,8 +36,8 @@ import numpy as np
 
 INIT_NOISES     = [0.05, 0.10, 0.15]
 DIST_MAGNITUDES = [
-    ("low",    4.3e-2),   # 5e-5 × 857 (F450/CF2X Ixx ratio) → same α as CF2X low
-    ("medium", 1.7e-1),   # 2e-4 × 857
+    ("low",    4.3e-2),   # 5e-5 x 857 (F450/CF2X Ixx ratio) -> same α as CF2X low
+    ("medium", 1.7e-1),   # 2e-4 x 857
 ]
 
 parser = argparse.ArgumentParser()
@@ -67,8 +67,6 @@ os.makedirs(ROOT_DIR, exist_ok=True)
 SCRIPT = os.path.join(os.path.dirname(__file__), "eval_disturbance.py")
 PYTHON = sys.executable
 
-
-# ── Per-condition evaluation ──────────────────────────────────────────────────
 
 def condition_tag(noise, mag_label):
     return f"noise{noise:.2f}_{mag_label}"
@@ -101,7 +99,7 @@ def run_condition(noise, mag_label, mag_val):
             cmd.append("--no-plots")
 
         print(f"\n[GRID] ── {tag}  noise={noise}  mag={mag_val:.1e} ({mag_label}) ──")
-        print(f"[GRID] Output → {out_dir}")
+        print(f"[GRID] Output -> {out_dir}")
         t0 = time.time()
         result = subprocess.run(cmd, text=True)
         elapsed = time.time() - t0
@@ -117,8 +115,6 @@ def run_condition(noise, mag_label, mag_val):
 
     return np.load(npz_path, allow_pickle=True)
 
-
-# ── Metrics from raw trajectory arrays ───────────────────────────────────────
 
 RECOVERY_THRESHOLD = 0.10   # rad/s
 RECOVERY_WINDOW    = 10     # consecutive steps
@@ -251,8 +247,6 @@ def summarise(data, label):
     }
 
 
-# ── Winner determination ──────────────────────────────────────────────────────
-
 def determine_winner(r):
     """
     RL wins if ALL of:
@@ -295,12 +289,10 @@ def determine_winner(r):
     return "MIXED"
 
 
-# ── Run all conditions ────────────────────────────────────────────────────────
-
 print(f"[GRID] Model      : {MODEL_PATH}")
 print(f"[GRID] Output root: {ROOT_DIR}")
-print(f"[GRID] Conditions : {len(INIT_NOISES)} noise × {len(DIST_MAGNITUDES)} dist "
-      f"= {len(INIT_NOISES)*len(DIST_MAGNITUDES)} runs × {args.episodes} episodes")
+print(f"[GRID] Conditions : {len(INIT_NOISES)} noise x {len(DIST_MAGNITUDES)} dist "
+      f"= {len(INIT_NOISES)*len(DIST_MAGNITUDES)} runs x {args.episodes} episodes")
 
 rows = []
 for noise in INIT_NOISES:
@@ -314,8 +306,6 @@ for noise in INIT_NOISES:
         else:
             rows.append({"label": tag, "error": True})
 
-
-# ── Build report ──────────────────────────────────────────────────────────────
 
 def fmt_pct(v):
     if np.isnan(v):
@@ -335,8 +325,8 @@ lines = [
     SEP,
     f"DISTURBANCE-REJECTION GRID SUMMARY  [axis={AXIS}]",
     f"Model     : {MODEL_PATH}",
-    f"Conditions: init_noise ∈ {INIT_NOISES}  |  "
-    f"dist_magnitudes ∈ {[m for _, m in DIST_MAGNITUDES]}",
+    f"Conditions: init_noise in {INIT_NOISES}  |  "
+    f"dist_magnitudes in {[m for _, m in DIST_MAGNITUDES]}",
     f"Per-cond  : {args.episodes} episodes, dist_step={args.dist_step}, "
     f"dist_duration={args.dist_duration}",
     SEP,
@@ -346,7 +336,7 @@ _rms_hdr  = f"RMS {AXIS}_rate (rad/s)"
 _peak_hdr = f"Peak |{AXIS}_rate| (rad/s)"
 _max_hdr  = f"Max{AXIS.capitalize()}"
 
-# ── Table header ──────────────────────────────────────────────────────────────
+
 lines += [
     "",
     f"{'Condition':<22}  {'Crashes':^9}  "
@@ -385,14 +375,12 @@ lines += [
     "  Peak rr: max |roll_rate| from dist_step to episode end (captures full response)",
     "  Recovery: steps after disturbance until |rr| < 0.1 rad/s for 10 consecutive steps",
     "",
-    "  Winner criteria —",
-    "    RL      : crashes(RL) ≤ crashes(BL)  AND  peak improvement ≥ 10%  AND  RMS not worse by > 5%",
+    "  Winner criteria --",
+    "    RL      : crashes(RL) <= crashes(BL)  AND  peak improvement >= 10%  AND  RMS not worse by > 5%",
     "    BASELINE: crashes(BL) < crashes(RL)  OR   RMS(BL) better by > 10% AND peak(BL) not worse",
     "    MIXED   : neither of the above",
 ]
 
-
-# ── Conclusion section ────────────────────────────────────────────────────────
 
 rl_wins   = [r["label"] for r in rows if not r.get("error") and r["winner"] == "RL"]
 bl_wins   = [r["label"] for r in rows if not r.get("error") and r["winner"] == "BASELINE"]
@@ -408,7 +396,7 @@ lines += ["", SEP, f"OVERALL CONCLUSION  [axis={AXIS}]", SEP]
 def bullet_list(label, items):
     if items:
         return f"  {label} ({len(items)}): {', '.join(items)}"
-    return f"  {label} (0): —"
+    return f"  {label} (0): --"
 
 lines.append(bullet_list("RL wins    ", rl_wins))
 lines.append(bullet_list("BASELINE   ", bl_wins))
@@ -455,7 +443,7 @@ elif len(bl_wins) == 0 and len(rl_wins) > 0:
     )
 elif len(bl_wins) > 0:
     lines.append(
-        "  VERDICT: Baseline wins in some conditions — likely at high noise where RL RMS degrades. "
+        "  VERDICT: Baseline wins in some conditions, likely at high noise where RL RMS degrades. "
         "Consider widening init_noise_range or extending training timesteps."
     )
 else:
@@ -469,11 +457,10 @@ lines.append(SEP)
 report = "\n".join(lines)
 print("\n" + report)
 
-# ── Save ─────────────────────────────────────────────────────────────────────
 
 summary_path = os.path.join(ROOT_DIR, "grid_summary.txt")
 with open(summary_path, "w") as f:
     f.write(report + "\n")
 
-print(f"\n[GRID] Grid summary saved → {summary_path}")
+print(f"\n[GRID] Grid summary saved -> {summary_path}")
 print(f"[GRID] Per-condition NPZs and plots in subdirs of: {ROOT_DIR}")

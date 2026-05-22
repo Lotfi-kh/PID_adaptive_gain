@@ -4,19 +4,19 @@ actor, with weights extracted from the SAME frozen ONNX
 (export/actor_joint_12d_c860k.onnx).
 
 Why this exists: the stedgeai-generated network.c links ST's ARM-only
-NetworkRuntime — it cannot compile into PX4 SITL (x86 posix). This tiny MLP
+NetworkRuntime, it cannot compile into PX4 SITL (x86 posix). This tiny MLP
 (Linear(12,64)->ReLU->Linear(64,64)->ReLU->Linear(64,3)->Tanh, 5187 params)
 is reimplemented as plain C: identical math, runs on x86 SITL AND STM32, zero
 non-portable dependency. The stedgeai C stays the embedded cross-check artifact.
 
-Outputs (NEW, namespaced — nothing old touched):
+Outputs (NEW, namespaced, nothing old touched):
     export/portable_c_12d_c860k/rl_actor_weights.h   weights as const float[]
     export/portable_c_12d_c860k/rl_actor.h           API
     export/portable_c_12d_c860k/rl_actor.c           portable forward pass
     export/portable_c_12d_c860k/test_rl_actor.c      harness vs ONNX vectors
 
 Usage:
-    cd ~/rl_pid_tuner && python export/gen_portable_c_12d_c860k.py
+    python export/gen_portable_c_12d_c860k.py
 """
 import os
 import numpy as np
@@ -35,7 +35,7 @@ def main():
     m = onnx.load(ONNX_PATH)
     inits = {t.name: numpy_helper.to_array(t) for t in m.graph.initializer}
 
-    # Walk Gemm nodes in topological order — deterministic, no shape guessing.
+    # Walk Gemm nodes in topological order, deterministic, no shape guessing.
     # Each Gemm: input[0]=x, input[1]=weight, input[2]=bias; respect transB.
     W, B = [], []
     for nd in m.graph.node:
@@ -56,7 +56,7 @@ def main():
     assert [w.shape for w in W] == [(H1, IN_DIM), (H2, H1), (OUT_DIM, H2)], \
         f"unexpected layer shapes: {[w.shape for w in W]}"
 
-    # ── Self-check: numpy forward (same math as the C) vs onnxruntime ─────────
+
     import onnxruntime as ort
     sess = ort.InferenceSession(ONNX_PATH, providers=["CPUExecutionProvider"])
     iname, oname = sess.get_inputs()[0].name, sess.get_outputs()[0].name
@@ -76,7 +76,7 @@ def main():
         mine = np_forward(xv.astype(np.float64))
         worst = max(worst, float(np.max(np.abs(mine - ref))))
     if worst > 1e-5:
-        raise SystemExit(f"[PORTABLE] ABORT — extraction wrong, "
+        raise SystemExit(f"[PORTABLE] ABORT, extraction wrong, "
                          f"max|numpy - onnx| = {worst:.3e} (> 1e-5)")
     print(f"[PORTABLE] Self-check OK: max|numpy - onnx| = {worst:.3e} over 64 random inputs")
 
@@ -87,8 +87,8 @@ def main():
             for k in range(0, len(flat), 8))
         return f"static const float {name}[{flat.size}] = {{\n  {body}\n}};\n"
 
-    # ── rl_actor_weights.h ───────────────────────────────────────────────────
-    h = ['/* AUTO-GENERATED from export/actor_joint_12d_c860k.onnx — do not edit. */',
+
+    h = ['/* AUTO-GENERATED from export/actor_joint_12d_c860k.onnx, do not edit. */',
          '#ifndef RL_ACTOR_WEIGHTS_H', '#define RL_ACTOR_WEIGHTS_H', '',
          f'#define RL_IN_DIM  {IN_DIM}', f'#define RL_H1_DIM  {H1}',
          f'#define RL_H2_DIM  {H2}', f'#define RL_OUT_DIM {OUT_DIM}', '',
@@ -100,7 +100,7 @@ def main():
     with open(os.path.join(OUT_DIR, "rl_actor_weights.h"), "w") as f:
         f.write("\n".join(h))
 
-    # ── rl_actor.h ───────────────────────────────────────────────────────────
+
     with open(os.path.join(OUT_DIR, "rl_actor.h"), "w") as f:
         f.write(
             "/* Portable, dependency-free forward pass of the frozen 12-D\n"
@@ -113,7 +113,7 @@ def main():
             "void rl_actor_forward(const float obs[12], float action[3]);\n"
             "#ifdef __cplusplus\n}\n#endif\n#endif\n")
 
-    # ── rl_actor.c ───────────────────────────────────────────────────────────
+
     with open(os.path.join(OUT_DIR, "rl_actor.c"), "w") as f:
         f.write(
             '#include "rl_actor.h"\n#include "rl_actor_weights.h"\n'
@@ -135,7 +135,7 @@ def main():
             "  for (int o = 0; o < RL_OUT_DIM; ++o) action[o] = tanhf(action[o]);\n"
             "}\n")
 
-    # ── test_rl_actor.c (reads the stedgeai val CSVs, no header) ──────────────
+
     with open(os.path.join(OUT_DIR, "test_rl_actor.c"), "w") as f:
         f.write(
             '#include "rl_actor.h"\n#include <stdio.h>\n#include <stdlib.h>\n'

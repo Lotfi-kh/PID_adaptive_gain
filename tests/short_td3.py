@@ -1,6 +1,6 @@
 """
-Test 3 — Short TD3 training run (PyBullet backend)
-====================================================
+Test 3, Short TD3 training run (PyBullet backend)
+
 Purpose:
     Run TD3 for a small number of timesteps (default 10 000) to verify the
     training loop is healthy:
@@ -10,7 +10,7 @@ Purpose:
     - Model and replay buffer are saved to tests/results/short_td3/
 
 Usage:
-    cd ~/rl_pid_tuner && python tests/short_td3.py [--steps N]
+    python tests/short_td3.py [--steps N]
 """
 
 import sys, os, argparse, signal, time
@@ -49,13 +49,13 @@ def make_env():
 
 
 def main():
-    print(f"[SHORT_TD3] Training for {TOTAL_STEPS} steps → {RESULTS}")
+    print(f"[SHORT_TD3] Training for {TOTAL_STEPS} steps -> {RESULTS}")
 
     env   = make_env()
     model = None
 
     def _shutdown(sig, frame):
-        print("\n[SHORT_TD3] Interrupted — saving …")
+        print("\n[SHORT_TD3] Interrupted, saving …")
         if model:
             model.save(os.path.join(RESULTS, "td3_short_interrupted"))
         env.close()
@@ -93,7 +93,7 @@ def main():
 
     model.save(os.path.join(RESULTS, "td3_short_final"))
     print(f"\n[SHORT_TD3] Done in {elapsed:.0f}s  ({elapsed/60:.1f} min)")
-    print(f"[SHORT_TD3] Model saved → {RESULTS}/td3_short_final.zip")
+    print(f"[SHORT_TD3] Model saved -> {RESULTS}/td3_short_final.zip")
     env.close()
 
 

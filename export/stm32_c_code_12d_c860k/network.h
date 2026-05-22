@@ -104,7 +104,6 @@ ai_bool ai_network_get_info(
   ai_handle network, ai_network_report* report);
 
 
-
 /*!
  * @brief Get network library report as a datastruct.
  * @ingroup network

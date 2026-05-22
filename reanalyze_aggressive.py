@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Reanalyze aggressive eval NPZ files using the correct rate axis per condition.
-  dist_axis=roll  → measure roll_rates
-  dist_axis=pitch → measure pitch_rates
-  dist_axis=both  → measure sqrt(roll² + pitch²) combined angular rate
+  dist_axis=roll  -> measure roll_rates
+  dist_axis=pitch -> measure pitch_rates
+  dist_axis=both  -> measure sqrt(roll² + pitch²) combined angular rate
 """
 import os
 import numpy as np
 
-NPZ_ROOT = "/home/lotfikh/rl_pid_tuner/test_results/aggressive_eval"
+NPZ_ROOT = "test_results/aggressive_eval"
 OUT_TXT  = os.path.join(NPZ_ROOT, "aggressive_eval_corrected.txt")
 
 INIT_NOISES = [0.05, 0.10, 0.15, 0.20]
@@ -28,7 +28,7 @@ def load_rate(data, key_base):
         return data[f"{key_base}_roll_rates"]
     elif dist_axis == "pitch":
         return data[f"{key_base}_pitch_rates"]
-    else:  # both — combined angular rate magnitude
+    else:  # both, combined angular rate magnitude
         rr = data[f"{key_base}_roll_rates"]
         pr = data[f"{key_base}_pitch_rates"]
         return np.sqrt(rr**2 + pr**2)
@@ -144,8 +144,8 @@ def main():
 
     lines = []
     lines.append("=" * 112)
-    lines.append("CORRECTED AGGRESSIVE EVAL — c860k  [rate axis matched to disturbance axis]")
-    lines.append(f"roll/both → roll_rate or combined;  pitch → pitch_rate")
+    lines.append("CORRECTED AGGRESSIVE EVAL, c860k  [rate axis matched to disturbance axis]")
+    lines.append(f"roll/both -> roll_rate or combined;  pitch -> pitch_rate")
     lines.append("=" * 112)
     lines.append(header)
     lines.append(sep)
@@ -194,7 +194,7 @@ def main():
         peak_m = np.nanmean([r['peak_pct'] for r in sub])
         crash_rl = sum(r['rl_crash'] for r in sub)
         crash_bl = sum(r['bl_crash'] for r in sub)
-        lines.append(f"  {mag_label:8s} ({mag_val:.2f} N·m): RL wins {rls}/{len(sub)}  "
+        lines.append(f"  {mag_label:8s} ({mag_val:.2f} N.m): RL wins {rls}/{len(sub)}  "
                      f"peak Δ {peak_m:+.1f}%  crashes BL={crash_bl} RL={crash_rl}")
 
     lines.append("\n--- Per noise level ---")
@@ -213,7 +213,7 @@ def main():
 
     with open(OUT_TXT, "w") as f:
         f.write(report + "\n")
-    print(f"\n[OK] Corrected report → {OUT_TXT}")
+    print(f"\n[OK] Corrected report -> {OUT_TXT}")
 
 
 if __name__ == "__main__":

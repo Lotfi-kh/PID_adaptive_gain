@@ -1,26 +1,26 @@
 """
 Generate deterministic test vectors for the FROZEN 12-D c860k actor ONNX.
 
-NEW FILE — does not modify or replace gen_test_vectors.py (13-D 1p05M),
+NEW FILE, does not modify or replace gen_test_vectors.py (13-D 1p05M),
 which stays frozen for traceability.
 
 Model under test:
     export/actor_joint_12d_c860k.onnx   (12-D obs, step_prog removed)
 
-Outputs (all c860k-specific, new names — nothing old is overwritten):
+Outputs (all c860k-specific, new names, nothing old is overwritten):
     export/actor_joint_12d_c860k_test_vectors.json   full structured vectors
     export/actor_joint_12d_c860k_test_vectors.csv    flat table (human/debug)
-    export/actor_joint_12d_c860k_valinput.csv        raw [N,12], no header  → stedgeai --valinput
-    export/actor_joint_12d_c860k_valoutput.csv       raw [N,3],  no header  → stedgeai --valoutput
+    export/actor_joint_12d_c860k_valinput.csv        raw [N,12], no header  -> stedgeai --valinput
+    export/actor_joint_12d_c860k_valoutput.csv       raw [N,3],  no header  -> stedgeai --valoutput
 
-12-D observation layout (step_prog GONE — invariance by construction):
+12-D observation layout (step_prog GONE, invariance by construction):
     [ roll, pitch,
       roll_rate, pitch_rate,
       roll_rate_err, pitch_rate_err,
       Kp_roll_n, Ki_roll_n, Kd_roll_n,
       Kp_pitch_n, Ki_pitch_n, Kd_pitch_n ]
 
-DEPLOYMENT CONTRACT — every constant below is copied verbatim from
+DEPLOYMENT CONTRACT, every constant below is copied verbatim from
 sitl/sitl_gain_injector.py so the C-side oracle matches the live injector.
 Two distinct concepts, kept strictly separate (the old 13-D generator
 conflated them because both happened to equal 1.72):
@@ -28,7 +28,7 @@ conflated them because both happened to equal 1.72):
   • clamp    : applied-gain hard floor/ceiling (the new safety clamp band)
 
 Usage:
-    cd ~/rl_pid_tuner && python export/gen_test_vectors_12d_c860k.py
+    python export/gen_test_vectors_12d_c860k.py
 """
 import csv
 import json
@@ -48,7 +48,7 @@ OUT_VALOUTPUT   = os.path.join(_HERE, "actor_joint_12d_c860k_valoutput.csv")
 OBS_DIM = 12
 ACT_DIM = 3
 
-# ── Runtime contract constants (verbatim from sitl_gain_injector.py) ───────────
+
 KP_DEFAULT = 0.171
 KI_DEFAULT = 0.0086
 KD_DEFAULT = 0.00171
@@ -60,7 +60,7 @@ KD_NORM = 8.6e-3
 
 KP_ATT = 3.0
 
-# Deployment safety clamp — applied-gain hard floor/ceiling.
+# Deployment safety clamp, applied-gain hard floor/ceiling.
 # sitl_gain_injector.py: CLAMP_LO_MULT=0.5, CLAMP_HI_MULT=2.5 on the defaults.
 CLAMP_LO_MULT = 0.5
 CLAMP_HI_MULT = 2.5
@@ -99,7 +99,7 @@ def apply_action(action, kp_prev, ki_prev, kd_prev):
 DG = (KP_DEFAULT, KI_DEFAULT, KD_DEFAULT)
 
 # (name, description, roll, pitch, roll_rate, pitch_rate, kp, ki, kd)
-# NO step_prog anywhere — removed from the model entirely.
+# NO step_prog anywhere, removed from the model entirely.
 CASES = [
     ("zero_obs",
      "All states zero. Gains at default.",
@@ -185,7 +185,7 @@ def main():
         print(f"    gains  : Kp {kp:.4f}->{kp_new:.6f}  "
               f"Ki {ki:.5f}->{ki_new:.7f}  Kd {kd:.6f}->{kd_new:.8f}\n")
 
-    # ── JSON ─────────────────────────────────────────────────────────────────
+
     payload = {
         "metadata": {
             "onnx_model"   : os.path.basename(ONNX_PATH),
@@ -225,7 +225,7 @@ def main():
             ],
             "note": ("step_prog removed entirely (12-D model). obs is "
                      "normalized by *_NORM; applied gains clip to clamp_band "
-                     "— these are distinct, do not conflate."),
+                     "-- these are distinct, do not conflate."),
         },
         "vectors": records,
     }
@@ -233,7 +233,7 @@ def main():
         json.dump(payload, f, indent=2)
     print(f"[VECGEN] Wrote JSON     : {OUT_JSON}")
 
-    # ── Human/debug CSV ──────────────────────────────────────────────────────
+
     header = (["name"]
               + [f"obs_{i:02d}" for i in range(OBS_DIM)]
               + [f"action_{i}" for i in range(ACT_DIM)]
@@ -260,7 +260,7 @@ def main():
             )
     print(f"[VECGEN] Wrote CSV      : {OUT_CSV}")
 
-    # ── stedgeai validation CSVs (raw, NO header, one sample per row) ─────────
+
     with open(OUT_VALINPUT, "w", newline="") as f:
         w = csv.writer(f)
         for r in records:
@@ -273,7 +273,7 @@ def main():
             w.writerow([f"{v:.8f}" for v in r["action"]])      # 3 cols
     print(f"[VECGEN] Wrote valoutput: {OUT_VALOUTPUT}  ([{len(records)},{ACT_DIM}], no header)")
 
-    print(f"[VECGEN] Done — {len(records)} vectors. step_prog: ABSENT (12-D).")
+    print(f"[VECGEN] Done, {len(records)} vectors. step_prog: ABSENT (12-D).")
 
 
 if __name__ == "__main__":

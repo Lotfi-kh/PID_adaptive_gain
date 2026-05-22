@@ -1,6 +1,6 @@
 """
-eval_disturbance.py — Disturbance-rejection evaluation
-=======================================================
+eval_disturbance.py, Disturbance-rejection evaluation
+
 Evaluates fixed-gain baseline PID, trained RL-adaptive PID, or both, under:
   - configurable initial noise (init_noise)
   - optional mid-episode torque impulse on a chosen axis
@@ -16,8 +16,8 @@ Disturbance axis (--dist-axis)
   roll | pitch | both
   Default: matches --axis for single-axis; 'both' for roll+pitch.
 
-Disturbance magnitudes (calibrated for F450, Ixx = Iyy = 0.012 kg·m²):
-  low    4.3e-2 N·m  ;  medium 1.7e-1 N·m
+Disturbance magnitudes (calibrated for F450, Ixx = Iyy = 0.012 kg.m²):
+  low    4.3e-2 N.m  ;  medium 1.7e-1 N.m
 
 Examples
 --------
@@ -39,7 +39,6 @@ import numpy as np
 from stable_baselines3 import TD3
 from envs import PyBulletPIDTunerEnv
 
-# ── Args ───────────────────────────────────────────────────────────────────────
 
 parser = argparse.ArgumentParser(
     description="Disturbance-rejection evaluation: baseline, RL-adaptive, or both.",
@@ -64,7 +63,7 @@ parser.add_argument("--init-noise", type=float, default=0.05,
 parser.add_argument("--dist-step", type=int, default=150,
                     help="Control step at which to begin the disturbance impulse")
 parser.add_argument("--dist-magnitude", type=float, default=0.0,
-                    help="Axis-torque impulse magnitude (N·m). 0 = disabled. "
+                    help="Axis-torque impulse magnitude (N.m). 0 = disabled. "
                          "F450: low=4.3e-2, medium=1.7e-1")
 parser.add_argument("--dist-duration", type=int, default=5,
                     help="Number of control steps to sustain the impulse")
@@ -111,8 +110,6 @@ ENV_KWARGS = dict(
     disturbance_duration  = args.dist_duration,
 )
 
-
-# ── Helpers ────────────────────────────────────────────────────────────────────
 
 def _recovery_steps(rate_series, dist_end):
     """Steps from dist_end until |rate| < threshold for RECOVERY_WINDOW consecutive
@@ -178,7 +175,7 @@ def rollout(env, model_or_none, n_episodes, label):
                 rec_list.append(_recovery_steps(rr, dist_end))
             elif DIST_AXIS == "pitch":
                 rec_list.append(_recovery_steps(pr, dist_end))
-            else:  # both — recover when the larger of the two rates is below threshold
+            else:  # both, recover when the larger of the two rates is below threshold
                 combined = [max(abs(a), abs(b)) for a, b in zip(rr, pr)]
                 rec_list.append(_recovery_steps(combined, dist_end))
 
@@ -233,14 +230,12 @@ def rollout(env, model_or_none, n_episodes, label):
     )
 
 
-# ── Run ────────────────────────────────────────────────────────────────────────
-
 mode_label = ("Baseline + RL" if (RUN_BASELINE and RUN_RL)
               else "Baseline only" if RUN_BASELINE else "RL only")
 print(f"\n[DIST_EVAL] Mode: {mode_label}  |  tune={'roll+pitch' if JOINT else args.axis}  |  dist-axis={DIST_AXIS}")
 print(f"[DIST_EVAL] init_noise={args.init_noise}  dist_magnitude={args.dist_magnitude}  "
       f"dist_step={args.dist_step}  dist_duration={args.dist_duration}")
-print(f"[DIST_EVAL] Results → {args.out_dir}\n")
+print(f"[DIST_EVAL] Results -> {args.out_dir}\n")
 
 model = None
 if RUN_RL:
@@ -260,8 +255,6 @@ baseline = rollout(env, None,  args.episodes, "Baseline (fixed gains)") if RUN_B
 rl       = rollout(env, model, args.episodes, "RL-adaptive (TD3)")      if RUN_RL       else None
 env.close()
 
-
-# ── Report ─────────────────────────────────────────────────────────────────────
 
 def fmt_gains(r, axis):
     if axis == "roll":
@@ -290,17 +283,17 @@ if DIST_ACTIVE:
 title_ax = "ROLL+PITCH (joint)" if JOINT else args.axis.upper()
 lines = ["=" * 80]
 if RUN_BASELINE and RUN_RL:
-    lines += [f"DISTURBANCE-REJECTION EVALUATION — Baseline vs RL-Adaptive PID  [{title_ax}]",
+    lines += [f"DISTURBANCE-REJECTION EVALUATION, Baseline vs RL-Adaptive PID  [{title_ax}]",
               f"Model      : {args.model}"]
 elif RUN_BASELINE:
-    lines += [f"DISTURBANCE-REJECTION EVALUATION — Baseline (fixed gains)  [{title_ax}]",
-              "Model      : N/A — fixed default gains"]
+    lines += [f"DISTURBANCE-REJECTION EVALUATION, Baseline (fixed gains)  [{title_ax}]",
+              "Model      : N/A, fixed default gains"]
 else:
-    lines += [f"DISTURBANCE-REJECTION EVALUATION — RL-Adaptive PID  [{title_ax}]",
+    lines += [f"DISTURBANCE-REJECTION EVALUATION, RL-Adaptive PID  [{title_ax}]",
               f"Model      : {args.model}"]
 lines.append(f"init_noise : {args.init_noise} rad")
 if DIST_ACTIVE:
-    lines.append(f"Disturbance: {args.dist_magnitude:.1e} N·m at step {args.dist_step} for "
+    lines.append(f"Disturbance: {args.dist_magnitude:.1e} N.m at step {args.dist_step} for "
                  f"{args.dist_duration} steps ({args.dist_duration/CTRL_FREQ*1000:.0f} ms)  "
                  f"[dist-axis = {DIST_AXIS}]")
 else:
@@ -381,11 +374,9 @@ np.savez(npz_path, **npz)
 txt_path = os.path.join(args.out_dir, "disturbance_comparison_summary.txt")
 with open(txt_path, "w") as f:
     f.write(report + "\n")
-print(f"\n[DIST_EVAL] NPZ saved  → {npz_path}")
-print(f"[DIST_EVAL] TXT saved  → {txt_path}")
+print(f"\n[DIST_EVAL] NPZ saved  -> {npz_path}")
+print(f"[DIST_EVAL] TXT saved  -> {txt_path}")
 
-
-# ── Plots ──────────────────────────────────────────────────────────────────────
 
 if args.no_plots:
     print("[DIST_EVAL] Plots skipped (--no-plots).")
@@ -427,7 +418,7 @@ else:
         plt.tight_layout()
         pp = os.path.join(args.out_dir, "disturbance_trajectories.png")
         plt.savefig(pp, dpi=130, bbox_inches="tight"); plt.close()
-        print(f"[DIST_EVAL] Plot saved → {pp}")
+        print(f"[DIST_EVAL] Plot saved -> {pp}")
     except Exception as exc:
         print(f"[DIST_EVAL][WARN] Plotting failed: {exc}")
 

@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-run_aggressive_eval.py — Aggressive multi-condition disturbance evaluation
-=========================================================================
+run_aggressive_eval.py, Aggressive multi-condition disturbance evaluation
+
 Tests the c860k model across 48 conditions:
-    init_noise     ∈ {0.05, 0.10, 0.15, 0.20}     (4 noise levels)
-    dist_magnitude ∈ {low, medium, high, extreme}  (0.043, 0.17, 0.30, 0.40 N·m)
-    dist_axis      ∈ {roll, pitch, both}            (3 axes)
+    init_noise     in {0.05, 0.10, 0.15, 0.20}     (4 noise levels)
+    dist_magnitude in {low, medium, high, extreme}  (0.043, 0.17, 0.30, 0.40 N.m)
+    dist_axis      in {roll, pitch, both}            (3 axes)
 
 20 episodes per condition, 10 steps disturbance duration.
 All results saved under test_results/aggressive_eval/
@@ -18,9 +18,9 @@ import sys
 import time
 import numpy as np
 
-MODEL = "/home/lotfikh/rl_pid_tuner/results/frozen_joint_12d_c860k/td3_pid_860000_steps.zip"
-OUT_ROOT = "/home/lotfikh/rl_pid_tuner/test_results/aggressive_eval"
-SCRIPT = "/home/lotfikh/rl_pid_tuner/eval_disturbance.py"
+MODEL = "results/frozen_joint_12d_c860k/td3_pid_860000_steps.zip"
+OUT_ROOT = "test_results/aggressive_eval"
+SCRIPT = "eval_disturbance.py"
 PYTHON = sys.executable
 
 INIT_NOISES = [0.05, 0.10, 0.15, 0.20]
@@ -33,7 +33,7 @@ DIST_MAGNITUDES = [
 DIST_AXES = ["roll", "pitch", "both"]
 EPISODES = 20
 DIST_STEP = 150
-DIST_DURATION = 10   # longer than default 5 — more sustained pressure
+DIST_DURATION = 10   # longer than default 5, more sustained pressure
 
 
 def run_condition(noise, mag_label, mag_val, dist_axis):
@@ -159,7 +159,7 @@ def main():
     os.makedirs(OUT_ROOT, exist_ok=True)
     total = len(INIT_NOISES) * len(DIST_MAGNITUDES) * len(DIST_AXES)
     print(f"\n{'='*80}")
-    print(f"AGGRESSIVE EVALUATION — c860k model   [{total} conditions × {EPISODES} episodes]")
+    print(f"AGGRESSIVE EVALUATION, c860k model   [{total} conditions x {EPISODES} episodes]")
     print(f"Model: {MODEL}")
     print(f"{'='*80}\n")
 
@@ -187,7 +187,7 @@ def main():
     print(f"All {total} conditions done in {elapsed_total/60:.1f} min  ({failed} failed)")
     print(f"{'='*80}\n")
 
-    # ── Full table ────────────────────────────────────────────────────────────
+
     sep = "-" * 108
     header = (f"{'Condition':<38}  {'Crash':^10}  {'RMS Δ%':>8}  "
               f"{'Peak Δ%':>8}  {'Rec Δ%':>8}  "
@@ -227,7 +227,7 @@ def main():
     if all_rec_pcts:
         print(f"  Mean recovery improve : {np.nanmean(all_rec_pcts):+.1f}%")
 
-    # ── Per-axis sub-summary ──────────────────────────────────────────────────
+
     print(f"\n--- Per disturbance axis ---")
     for axis in DIST_AXES:
         sub = [r for tag, r in results.items()
@@ -239,7 +239,7 @@ def main():
         print(f"  {axis:6s}: RL wins {rls}/{len(sub)}  "
               f"peak Δ {peak_m:+.1f}%  rec Δ {rec_m:+.1f}%")
 
-    # ── Per-magnitude sub-summary ─────────────────────────────────────────────
+
     print(f"\n--- Per disturbance magnitude ---")
     for mag_label, mag_val in DIST_MAGNITUDES:
         sub = [r for tag, r in results.items()
@@ -249,17 +249,17 @@ def main():
         peak_m = np.nanmean([r['peak_pct'] for r in sub])
         crash_total_rl = sum(r['rl_crash'] for r in sub)
         crash_total_bl = sum(r['bl_crash'] for r in sub)
-        print(f"  {mag_label:8s} ({mag_val:.2f} N·m): RL wins {rls}/{len(sub)}  "
+        print(f"  {mag_label:8s} ({mag_val:.2f} N.m): RL wins {rls}/{len(sub)}  "
               f"peak Δ {peak_m:+.1f}%  crashes BL={crash_total_bl} RL={crash_total_rl}")
 
-    # ── Save report ───────────────────────────────────────────────────────────
+
     report_path = os.path.join(OUT_ROOT, "aggressive_eval_summary.txt")
     import io, contextlib
     report_lines = []
-    report_lines.append(f"AGGRESSIVE EVAL SUMMARY — c860k  [{total} conditions × {EPISODES} episodes]")
+    report_lines.append(f"AGGRESSIVE EVAL SUMMARY, c860k  [{total} conditions x {EPISODES} episodes]")
     report_lines.append(f"Model: {MODEL}")
     report_lines.append(f"Noise levels: {INIT_NOISES}")
-    report_lines.append(f"Dist magnitudes: {[m for m,_ in DIST_MAGNITUDES]} N·m = {[v for _,v in DIST_MAGNITUDES]}")
+    report_lines.append(f"Dist magnitudes: {[m for m,_ in DIST_MAGNITUDES]} N.m = {[v for _,v in DIST_MAGNITUDES]}")
     report_lines.append(f"RL wins: {rl_wins}  Baseline: {base_wins}  Mixed: {mixed}")
     if all_peak_pcts:
         report_lines.append(f"Mean peak improvement: {np.nanmean(all_peak_pcts):+.1f}%")
@@ -281,8 +281,8 @@ def main():
                     f"{fmt_pct(r['peak_pct']):>8}  {fmt_pct(r['rec_pct']):>8}  "
                     f"{rec_bl:>7}  {rec_rl:>7}  {r['winner']:^7}\n")
 
-    print(f"\n[EVAL] Report → {report_path}")
-    print(f"[EVAL] Per-condition NPZ data → {OUT_ROOT}/")
+    print(f"\n[EVAL] Report -> {report_path}")
+    print(f"[EVAL] Per-condition NPZ data -> {OUT_ROOT}/")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
 """
-Training script — TD3 on PyBulletPIDTunerEnv (default) or PX4GainTunerEnv
-============================================================================
-Usage:
-    cd ~/rl_pid_tuner && python train.py [--env pybullet|px4] [--steps N]
+Training script. TD3 on the PyBullet PID-tuner environment.
 
-Checkpoints and logs are saved to ./runs/<timestamp>/
+Usage:
+    python train.py [--steps N] [--axis roll|pitch|roll+pitch]
+
+Checkpoints and TensorBoard logs go under ./runs/<timestamp>/.
 """
 
 import argparse
@@ -24,58 +24,58 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.noise import NormalActionNoise
 import numpy as np
 
-from envs import PX4GainTunerEnv, PyBulletPIDTunerEnv
+from envs import PyBulletPIDTunerEnv
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--env",   choices=["pybullet", "px4"], default="pybullet")
 parser.add_argument("--axis",  choices=["roll", "pitch", "roll+pitch"], default="roll",
-                    help="Which axis to tune: 'roll', 'pitch', or 'roll+pitch' (joint). "
-                         "Default: roll")
+                    help="Which axis to tune. 'roll+pitch' is the joint mode "
+                         "used by the deployed model. Default: roll.")
 parser.add_argument("--steps", type=int, default=None,
-                    help="Override total_timesteps")
-# ── Disturbance randomization (training only) ──────────────────────────────────
+                    help="Override total_timesteps.")
+
 parser.add_argument("--randomize-disturbance", action="store_true",
-                    help="Sample disturbance params at each episode reset")
+                    help="Sample disturbance parameters at every episode reset.")
 parser.add_argument("--init-noise-min",    type=float, default=0.03)
 parser.add_argument("--init-noise-max",    type=float, default=0.15)
 parser.add_argument("--dist-step-min",     type=int,   default=80)
 parser.add_argument("--dist-step-max",     type=int,   default=250)
 parser.add_argument("--dist-mag-min",      type=float, default=0.0)
-parser.add_argument("--dist-mag-max",      type=float, default=0.25)  # F450-scaled: 3e-4 × 857
+parser.add_argument("--dist-mag-max",      type=float, default=0.25)
 parser.add_argument("--dist-duration-min", type=int,   default=3)
 parser.add_argument("--dist-duration-max", type=int,   default=10)
-# ── Training-distribution coverage (SITL OOD fix) ─────────────────────────────
+
 parser.add_argument("--randomize-initial-gains", action="store_true",
-                    help="Sample initial Kp/Ki/Kd uniformly across bounds each "
-                         "episode (covers the full gain-observation space)")
+                    help="Pick the initial Kp/Ki/Kd uniformly over the gain bounds "
+                         "at each episode.")
 parser.add_argument("--hold-episode-prob", type=float, default=0.0,
-                    help="Fraction of episodes that are 'hold': level start, no "
-                         "disturbance, stable random gains. Teaches the policy "
-                         "to output ~0 when already stable. Try 0.5.")
-# ── Sustained-disturbance episodes (Ki-destruction fix) ───────────────────────
+                    help="Fraction of episodes that are 'hold': level start, a "
+                         "very small constant torque, and random gains. Helps "
+                         "the policy learn to stay still when nothing is wrong. "
+                         "A value around 0.5 works.")
+
 parser.add_argument("--sustained-episode-prob", type=float, default=0.0,
                     help="Fraction of episodes that are 'sustained': default "
-                         "gains + moderate CONSTANT torque for the whole "
-                         "episode. Makes the 'kill Ki' transient exploit "
-                         "expensive. Try 0.25.")
+                         "gains and a moderate constant torque for the whole "
+                         "episode. This is what teaches the policy to keep Ki "
+                         "alive under a steady disturbance. Around 0.25 works.")
 parser.add_argument("--sustained-dist-mag-min", type=float, default=0.10)
 parser.add_argument("--sustained-dist-mag-max", type=float, default=0.15)
-# ── Action-noise decay (settle late-stage exploration) ────────────────────────
+
 parser.add_argument("--action-noise-decay", action="store_true",
-                    help="Linearly decay TD3 action-noise sigma over this "
-                         "invocation's steps (start=action_noise_std).")
+                    help="Linearly decay the TD3 action-noise sigma over this "
+                         "run's steps (start at action_noise_std).")
 parser.add_argument("--action-noise-end", type=float, default=0.02,
-                    help="Final action-noise sigma when --action-noise-decay "
-                         "is set (default 0.02).")
-# ── Resume from checkpoint ─────────────────────────────────────────────────────
+                    help="Final action-noise sigma when --action-noise-decay is "
+                         "set. Default 0.02.")
+
 parser.add_argument("--resume", default=None, metavar="MODEL_ZIP",
-                    help="Path to a saved TD3 .zip to resume from. "
-                         "Actor/critic weights are restored; replay buffer starts cold. "
-                         "--steps is the TOTAL target (e.g. 1000000 to reach 1M "
-                         "when resuming a 500k run).")
+                    help="Path to a saved TD3 .zip to resume from. Actor and "
+                         "critic weights are restored, the replay buffer starts "
+                         "empty. --steps is the total target (for example 1000000 "
+                         "to reach 1M when resuming a 500k run).")
 args = parser.parse_args()
 
-# ── Run directory ──────────────────────────────────────────────────────────────
+
 RUN_DIR = os.path.join("runs", datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
 os.makedirs(RUN_DIR, exist_ok=True)
 LOG_DIR  = os.path.join(RUN_DIR, "logs")
@@ -85,7 +85,8 @@ os.makedirs(LOG_DIR,  exist_ok=True)
 os.makedirs(CKPT_DIR, exist_ok=True)
 os.makedirs(EVAL_DIR, exist_ok=True)
 
-# ── Hyperparameters ────────────────────────────────────────────────────────────
+
+# TD3 hyper-parameters.
 HP = dict(
     total_timesteps   = 1_000_000,
     learning_rate     = 1e-3,
@@ -105,10 +106,11 @@ if args.steps:
 
 
 class ActionNoiseDecayCallback(BaseCallback):
-    """Linearly decay NormalActionNoise sigma over this invocation's steps.
+    """Linearly decay the NormalActionNoise sigma over this run's steps.
 
-    Decay is measured from num_timesteps at training start, so it behaves
-    correctly with --resume (the additional steps get the full schedule).
+    The decay is measured from num_timesteps at training start, so it
+    still behaves correctly when --resume is used (the extra steps get a
+    full schedule of their own).
     """
 
     def __init__(self, sigma_start, sigma_end, decay_steps, verbose=0):
@@ -132,54 +134,41 @@ class ActionNoiseDecayCallback(BaseCallback):
 
 
 def make_env(eval_mode: bool = False):
-    if args.env == "pybullet":
-        if args.axis == "roll+pitch":
-            tune_axes = ["roll", "pitch"]
-            # Training: randomize over roll-only / pitch-only / both each episode.
-            # Eval env (deterministic): always disturb both axes.
-            dist_axis = "random" if (args.randomize_disturbance and not eval_mode) else "both"
-        else:
-            tune_axes = [args.axis]
-            dist_axis = args.axis
-        env = PyBulletPIDTunerEnv(
-            tune_axes        = tune_axes,
-            disturbance_axis = dist_axis,
-            max_steps       = 500,
-            target_alt      = 1.0,
-            reward_w1       = 1.0,
-            reward_w2       = 2.0,
-            reward_w3       = 0.1,
-            reward_w4       = 0.001,
-            crash_penalty   = 50.0,
-            stability_bonus = 20.0,
-            init_noise      = 0.05,
-            # disturbance randomization — enabled for training, disabled for eval
-            randomize_disturbance       = args.randomize_disturbance and not eval_mode,
-            init_noise_range            = (args.init_noise_min,    args.init_noise_max),
-            disturbance_step_range      = (args.dist_step_min,     args.dist_step_max),
-            disturbance_magnitude_range = (args.dist_mag_min,      args.dist_mag_max),
-            disturbance_duration_range  = (args.dist_duration_min, args.dist_duration_max),
-            # Eval env stays on the frozen-benchmark protocol (default gains,
-            # no hold episodes) so results remain comparable to Phase 2.
-            randomize_initial_gains     = args.randomize_initial_gains and not eval_mode,
-            hold_episode_prob           = (0.0 if eval_mode else args.hold_episode_prob),
-            sustained_episode_prob      = (0.0 if eval_mode else args.sustained_episode_prob),
-            sustained_dist_mag_range    = (args.sustained_dist_mag_min,
-                                           args.sustained_dist_mag_max),
-        )
+    if args.axis == "roll+pitch":
+        tune_axes = ["roll", "pitch"]
+        # In training we randomize the disturbance axis at each reset
+        # (roll only, pitch only, or both). The eval env always uses both
+        # so the numbers stay comparable across runs.
+        dist_axis = "random" if (args.randomize_disturbance and not eval_mode) else "both"
     else:
-        env = PX4GainTunerEnv(
-            step_duration   = 0.1,
-            max_steps       = 500,
-            takeoff_alt     = 5.0,
-            reward_w1       = 1.0,
-            reward_w2       = 2.0,
-            reward_w3       = 0.1,
-            reward_w4       = 0.001,
-            crash_penalty   = 50.0,
-            stability_bonus = 200.0,
-            init_noise      = 0.05,
-        )
+        tune_axes = [args.axis]
+        dist_axis = args.axis
+    env = PyBulletPIDTunerEnv(
+        tune_axes        = tune_axes,
+        disturbance_axis = dist_axis,
+        max_steps       = 500,
+        target_alt      = 1.0,
+        reward_w1       = 1.0,
+        reward_w2       = 2.0,
+        reward_w3       = 0.1,
+        reward_w4       = 0.001,
+        crash_penalty   = 50.0,
+        stability_bonus = 20.0,
+        init_noise      = 0.05,
+        # Disturbance randomization is on for training, off for eval.
+        randomize_disturbance       = args.randomize_disturbance and not eval_mode,
+        init_noise_range            = (args.init_noise_min,    args.init_noise_max),
+        disturbance_step_range      = (args.dist_step_min,     args.dist_step_max),
+        disturbance_magnitude_range = (args.dist_mag_min,      args.dist_mag_max),
+        disturbance_duration_range  = (args.dist_duration_min, args.dist_duration_max),
+        # The eval env keeps the simple protocol (default gains, no hold
+        # or sustained episodes) so the numbers stay comparable.
+        randomize_initial_gains     = args.randomize_initial_gains and not eval_mode,
+        hold_episode_prob           = (0.0 if eval_mode else args.hold_episode_prob),
+        sustained_episode_prob      = (0.0 if eval_mode else args.sustained_episode_prob),
+        sustained_dist_mag_range    = (args.sustained_dist_mag_min,
+                                       args.sustained_dist_mag_max),
+    )
     return Monitor(env, LOG_DIR)
 
 
@@ -189,9 +178,9 @@ def main():
     model = None
     env   = None
 
-    # Graceful shutdown on Ctrl+C (prevents pymavlink segfault)
+    # Save the model on Ctrl+C so we never lose a long run by accident.
     def _shutdown(sig, frame):
-        print("\n[TRAIN] Interrupted — saving and closing …")
+        print("\n[TRAIN] Interrupted, saving and closing.")
         try:
             if model is not None:
                 model.save(os.path.join(RUN_DIR, "td3_pid_interrupted"))
@@ -202,27 +191,27 @@ def main():
         sys.exit(0)
     signal.signal(signal.SIGINT, _shutdown)
 
-    # ── Environment ────────────────────────────────────────────────────────────
+
     env      = make_env()
     eval_env = make_env(eval_mode=True)
 
-    # ── Action noise (TD3 exploration) ─────────────────────────────────────────
+
     n_actions    = env.action_space.shape[0]
     action_noise = NormalActionNoise(
         mean  = np.zeros(n_actions),
         sigma = HP["action_noise_std"] * np.ones(n_actions),
     )
 
-    # ── Model ──────────────────────────────────────────────────────────────────
+
     if args.resume:
         print(f"[TRAIN] Resuming from: {args.resume}")
-        print("[TRAIN] Replay buffer: starts cold (not saved in checkpoint).")
+        print("[TRAIN] Replay buffer starts empty (it is not saved in the zip).")
         model = TD3.load(
             args.resume,
             env    = env,
             device = "cpu",
         )
-        # Restore settings not persisted in the zip file
+        # The zip file does not keep these, so we put them back.
         model.action_noise      = action_noise
         model.tensorboard_log   = LOG_DIR
         model.verbose           = 1
@@ -243,10 +232,10 @@ def main():
             policy_kwargs   = {"net_arch": HP["net_arch"]},
             verbose         = 1,
             tensorboard_log = LOG_DIR,
-            device          = "cpu",  # TD3 with MLP is faster on CPU
+            device          = "cpu",  # MLP TD3 is faster on CPU here.
         )
 
-    # ── Callbacks ──────────────────────────────────────────────────────────────
+
     checkpoint_cb = CheckpointCallback(
         save_freq      = 10_000,
         save_path      = CKPT_DIR,
@@ -264,18 +253,18 @@ def main():
         render               = False,
     )
 
-    # ── Train ──────────────────────────────────────────────────────────────────
-    # When resuming, SB3 internally does: effective_target += num_timesteps.
-    # So pass (total_target - current_steps) as the steps argument so that
-    # SB3's addition produces the intended total. E.g. target=1M, current=500k
-    # → pass 500k → SB3 computes 500k + 500k = 1M → trains exactly 500k more.
+
+    # When --resume is used, SB3 does effective_target = num_timesteps + steps.
+    # So we pass (total_target - current_steps) and let SB3 add it back.
+    # For example: target 1M, current 500k -> we pass 500k -> SB3 computes
+    # 500k + 500k = 1M -> the run does exactly 500k extra steps.
     if args.resume:
         remaining = HP["total_timesteps"] - model.num_timesteps
         if remaining <= 0:
-            print(f"[TRAIN] Already at {model.num_timesteps} steps — nothing to do.")
+            print(f"[TRAIN] Already at {model.num_timesteps} steps, nothing to do.")
             env.close(); eval_env.close(); sys.exit(0)
         learn_steps = remaining
-        print(f"[TRAIN] Resuming: {model.num_timesteps} → {HP['total_timesteps']} "
+        print(f"[TRAIN] Resuming: {model.num_timesteps} -> {HP['total_timesteps']} "
               f"({remaining} additional steps)")
     else:
         learn_steps = HP["total_timesteps"]
@@ -288,10 +277,10 @@ def main():
             decay_steps = learn_steps,
         )
         callbacks.append(decay_cb)
-        print(f"[TRAIN] Action-noise decay: {HP['action_noise_std']} → "
+        print(f"[TRAIN] Action-noise decay: {HP['action_noise_std']} -> "
               f"{args.action_noise_end} over {learn_steps} steps")
 
-    print("[TRAIN] Starting training …")
+    print("[TRAIN] Starting training.")
     t0 = time.time()
 
     model.learn(
@@ -306,7 +295,7 @@ def main():
 
     final_path = os.path.join(RUN_DIR, "td3_pid_final")
     model.save(final_path)
-    print(f"[TRAIN] Final model saved → {final_path}.zip")
+    print(f"[TRAIN] Final model saved at {final_path}.zip")
 
     env.close()
     eval_env.close()

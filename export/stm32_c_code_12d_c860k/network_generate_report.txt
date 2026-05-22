@@ -4,15 +4,15 @@ Parameters            : generate --model export/actor_joint_12d_c860k.onnx --tar
 
 Exec/report summary (generate)
 --------------------------------------------------------------------------------------
-model file         :   /home/lotfikh/rl_pid_tuner/export/actor_joint_12d_c860k.onnx   
+model file         :   export/actor_joint_12d_c860k.onnx   
 type               :   onnx                                                           
 c_name             :   network                                                        
 compression        :   lossless                                                       
 options            :   allocate-inputs, allocate-outputs                              
 optimization       :   balanced                                                       
 target/series      :   stm32                                                          
-workspace dir      :   /home/lotfikh/rl_pid_tuner/export/stedgeai_ws_12d_c860k        
-output dir         :   /home/lotfikh/rl_pid_tuner/export/stm32_c_code_12d_c860k       
+workspace dir      :   export/stedgeai_ws_12d_c860k        
+output dir         :   export/stm32_c_code_12d_c860k       
 model_fmt          :   float                                                          
 model_name         :   actor_joint_12d_c860k                                          
 model_hash         :   0x51b56419599eeb7c235f1e0702543b56                             
@@ -192,10 +192,10 @@ macc=5,345 weights=20,748 act=512 ram_io=0
 
 Generated files (7)
 -------------------------------------------------------------------------------- 
-/home/lotfikh/rl_pid_tuner/export/stm32_c_code_12d_c860k/network_data_params.h   
-/home/lotfikh/rl_pid_tuner/export/stm32_c_code_12d_c860k/network_data_params.c   
-/home/lotfikh/rl_pid_tuner/export/stm32_c_code_12d_c860k/network_data.h          
-/home/lotfikh/rl_pid_tuner/export/stm32_c_code_12d_c860k/network_data.c          
-/home/lotfikh/rl_pid_tuner/export/stm32_c_code_12d_c860k/network_config.h        
-/home/lotfikh/rl_pid_tuner/export/stm32_c_code_12d_c860k/network.h               
-/home/lotfikh/rl_pid_tuner/export/stm32_c_code_12d_c860k/network.c               
+export/stm32_c_code_12d_c860k/network_data_params.h   
+export/stm32_c_code_12d_c860k/network_data_params.c   
+export/stm32_c_code_12d_c860k/network_data.h          
+export/stm32_c_code_12d_c860k/network_data.c          
+export/stm32_c_code_12d_c860k/network_config.h        
+export/stm32_c_code_12d_c860k/network.h               
+export/stm32_c_code_12d_c860k/network.c               

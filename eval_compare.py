@@ -1,6 +1,6 @@
 """
-eval_compare.py — Post-training evaluation and baseline comparison
-===================================================================
+eval_compare.py, Post-training evaluation and baseline comparison
+
 Loads a trained TD3 model and runs deterministic evaluation against
 a fixed-gain baseline under identical conditions (same env, same noise seed).
 
@@ -40,7 +40,7 @@ ENV_KWARGS = dict(
 
 
 def run_episodes(env, model_or_none, n_episodes, label):
-    """Roll out n_episodes. model_or_none=None → fixed zero action (baseline)."""
+    """Roll out n_episodes. model_or_none=None -> fixed zero action (baseline)."""
     rr2_buf, rew_buf, act_buf = [], [], []
     ep_lens, ep_crashes = [], []
     kp_list, ki_list, kd_list = [], [], []
@@ -96,26 +96,23 @@ def run_episodes(env, model_or_none, n_episodes, label):
     )
 
 
-# ── Run both conditions ────────────────────────────────────────────────────────
-
 print(f"[EVAL] Loading model: {args.model}")
 model = TD3.load(args.model, device="cpu")
 
 env = PyBulletPIDTunerEnv(**ENV_KWARGS)
 
-print(f"[EVAL] Baseline (fixed default gains, zero action) — {args.episodes} episodes …")
+print(f"[EVAL] Baseline (fixed default gains, zero action), {args.episodes} episodes …")
 baseline = run_episodes(env, None, args.episodes, "Baseline (fixed gains)")
 
-print(f"[EVAL] RL-adaptive (trained TD3) — {args.episodes} episodes …")
+print(f"[EVAL] RL-adaptive (trained TD3), {args.episodes} episodes …")
 rl = run_episodes(env, model, args.episodes, "RL-adaptive (TD3)")
 
 env.close()
 
-# ── Print comparison ───────────────────────────────────────────────────────────
 
 lines = []
 lines.append("=" * 65)
-lines.append("PHASE 1 EVALUATION — Baseline vs RL-Adaptive PID")
+lines.append("PHASE 1 EVALUATION, Baseline vs RL-Adaptive PID")
 lines.append(f"Model : {args.model}")
 lines.append(f"Env   : init_noise={ENV_KWARGS['init_noise']}  "
              f"w1={ENV_KWARGS['reward_w1']}  w2={ENV_KWARGS['reward_w2']}  "
@@ -161,7 +158,6 @@ lines.append("\n" + "=" * 65)
 report = "\n".join(lines)
 print("\n" + report)
 
-# ── Save ──────────────────────────────────────────────────────────────────────
 
 npz_path = os.path.join(OUT_DIR, "eval_results.npz")
 np.savez(npz_path,
@@ -180,5 +176,5 @@ txt_path = os.path.join(OUT_DIR, "comparison_summary.txt")
 with open(txt_path, "w") as f:
     f.write(report + "\n")
 
-print(f"\n[EVAL] Results saved → {npz_path}")
-print(f"[EVAL] Summary saved → {txt_path}")
+print(f"\n[EVAL] Results saved -> {npz_path}")
+print(f"[EVAL] Summary saved -> {txt_path}")

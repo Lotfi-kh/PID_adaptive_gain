@@ -4,18 +4,18 @@ Export the deployable actor (policy.actor.mu) from the frozen TD3 model to ONNX.
 Read-only on the source checkpoint. Refuses to overwrite an existing ONNX file
 unless --force is passed.
 
-Target: policy.actor.mu — a clean nn.Sequential of
-    Linear(12,64) → ReLU → Linear(64,64) → ReLU → Linear(64,3) → Tanh
+Target: policy.actor.mu, a clean nn.Sequential of
+    Linear(12,64) -> ReLU -> Linear(64,64) -> ReLU -> Linear(64,3) -> Tanh
 
 Why .mu and not .actor:
     SB3's Actor wraps .mu with a FlattenExtractor (no-op for a (12,) Box obs)
     plus SB3 forward-pass plumbing. Exporting .mu gives the minimal pure
-    Linear/ReLU/Tanh graph — maximum STM32Cube.AI compatibility, no SB3
+    Linear/ReLU/Tanh graph, maximum STM32Cube.AI compatibility, no SB3
     training-mode artifacts in the trace.
 
 Usage:
-    cd ~/rl_pid_tuner && python export/export_actor_onnx.py
-    cd ~/rl_pid_tuner && python export/export_actor_onnx.py --force   # overwrite
+    python export/export_actor_onnx.py
+    python export/export_actor_onnx.py --force   # overwrite
 """
 import argparse
 import json
@@ -57,7 +57,7 @@ def main():
     print(f"[EXPORT] Output ONNX  : {args.out}")
     print(f"[EXPORT] Opset        : {args.opset}")
 
-    # Load on CPU; read-only — we never call .save() on this model.
+    # Load on CPU; read-only, we never call .save() on this model.
     model = TD3.load(args.model, device="cpu")
 
     actor_mu = model.policy.actor.mu

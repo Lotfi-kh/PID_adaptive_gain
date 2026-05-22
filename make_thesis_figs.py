@@ -1,12 +1,12 @@
 """
-make_thesis_figs.py — generate the two Section 4.2 figures for the thesis.
+make_thesis_figs.py, generate the two Section 4.2 figures for the thesis.
 
-  ~/thesis/images/hover_action.png     — action magnitude of the selected model
+  ~/thesis/images/hover_action.png    , action magnitude of the selected model
                                          over 300 captured SITL hover samples
-  ~/thesis/images/gain_trajectory.png  — Kp/Ki/Kd of the selected model over one
+  ~/thesis/images/gain_trajectory.png , Kp/Ki/Kd of the selected model over one
                                          sustained-disturbance episode
 
-Evaluation rollouts of the FROZEN model only — no training. Run from rl_pid_tuner/.
+Evaluation rollouts of the FROZEN model only, no training. Run from rl_pid_tuner/.
 """
 import os
 import numpy as np

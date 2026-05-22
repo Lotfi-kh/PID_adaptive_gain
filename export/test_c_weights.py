@@ -14,10 +14,10 @@ Weight layout in the u64 blob (from network_configure_weights in network.c):
   offset 19968: b1  [64]    float32  (64   floats,  256 bytes)
   offset 20224: W2  [3,64]  float32  (192  floats,  768 bytes)
   offset 20992: b2  [3]     float32  (3    floats,   12 bytes)
-  total: 21004 bytes (u64 array: 2626 × 8 = 21008, 4 bytes padding)
+  total: 21004 bytes (u64 array: 2626 x 8 = 21008, 4 bytes padding)
 
 Usage:
-    cd ~/rl_pid_tuner && python export/test_c_weights.py
+    python export/test_c_weights.py
 """
 import os
 import re
@@ -35,7 +35,7 @@ JSON_PATH = os.path.join(_HERE, "actor_joint_1p05M_test_vectors.json")
 TOL_WEIGHT = 0.0        # weights must match exactly (same float32 bits)
 TOL_ACTION = 1e-5       # forward-pass output tolerance (FP32 rounding)
 
-# ── Weight layout ─────────────────────────────────────────────────────────────
+
 LAYOUT = {
     "W0": (   0,  832),  # [64, 13]
     "b0": (3328,   64),  # [64]
@@ -47,7 +47,7 @@ LAYOUT = {
 
 
 def parse_c_weight_blob(path: str) -> bytes:
-    """Extract s_network_weights_array_u64 from network_data_params.c → raw bytes."""
+    """Extract s_network_weights_array_u64 from network_data_params.c -> raw bytes."""
     with open(path) as f:
         src = f.read()
     m = re.search(
@@ -63,7 +63,7 @@ def parse_c_weight_blob(path: str) -> bytes:
 
 
 def extract_weights(blob: bytes) -> dict:
-    """Slice the blob at known offsets → dict of float32 numpy arrays."""
+    """Slice the blob at known offsets -> dict of float32 numpy arrays."""
     w = {}
     for name, (off, n) in LAYOUT.items():
         vals = struct.unpack_from(f"<{n}f", blob, off)
@@ -92,7 +92,7 @@ def onnx_weights(path: str) -> dict:
         sys.exit("[SKIP] pip install onnx  (needed for weight parity check)")
     model = onnx.load(path)
     inits = {i.name: numpy_helper.to_array(i) for i in model.graph.initializer}
-    # Map ONNX names → our layout names; ONNX stores W as [out, in] (transB=1)
+    # Map ONNX names -> our layout names; ONNX stores W as [out, in] (transB=1)
     mapping = {
         "W0": None, "b0": None,
         "W1": None, "b1": None,
@@ -120,7 +120,7 @@ def main():
     print("Offline C-weight test")
     print("=" * 60)
 
-    # ── 1. Parse C binary blob ───────────────────────────────────────────────
+
     print(f"\n[1] Parsing weight blob from: {os.path.basename(C_PARAMS)}")
     blob = parse_c_weight_blob(C_PARAMS)
     print(f"    Blob size: {len(blob)} bytes  (expected 21008)")
@@ -130,7 +130,7 @@ def main():
               f"min={arr.min():.4f}  max={arr.max():.4f}  "
               f"norm={np.linalg.norm(arr):.4f}")
 
-    # ── 2. Weight parity vs ONNX ─────────────────────────────────────────────
+
     print(f"\n[2] Weight parity vs ONNX ({os.path.basename(ONNX_PATH)})")
     onnx_w = onnx_weights(ONNX_PATH)
     parity_ok = True
@@ -151,7 +151,7 @@ def main():
         if match == "FAIL":
             parity_ok = False
 
-    # ── 3. Forward-pass vs test vectors JSON ─────────────────────────────────
+
     print(f"\n[3] Forward-pass vs JSON test vectors ({os.path.basename(JSON_PATH)})")
     with open(JSON_PATH) as f:
         data = json.load(f)
@@ -171,15 +171,15 @@ def main():
             all_ok = False
         print(f"    {vec['name']:<28} {err:>10.2e}  {status}")
 
-    # ── Summary ──────────────────────────────────────────────────────────────
+
     print(f"\n{'='*60}")
     print(f"Weight parity:   {'PASS' if parity_ok else 'FAIL'}")
     print(f"Forward pass:    {'PASS' if all_ok else 'FAIL'}  "
           f"(worst err: {max(max_errs):.2e}, tol: {TOL_ACTION:.0e})")
     if parity_ok and all_ok:
-        print("OVERALL: PASS — C weight blob is bit-exact and inference matches")
+        print("OVERALL: PASS, C weight blob is bit-exact and inference matches")
     else:
-        print("OVERALL: FAIL — see details above")
+        print("OVERALL: FAIL, see details above")
     print("=" * 60)
 
     sys.exit(0 if (parity_ok and all_ok) else 1)

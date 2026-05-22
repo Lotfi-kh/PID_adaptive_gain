@@ -30,7 +30,6 @@
 #include "layers.h"
 
 
-
 #undef AI_NET_OBJ_INSTANCE
 #define AI_NET_OBJ_INSTANCE g_network
  
@@ -52,7 +51,6 @@
 
 static ai_ptr g_network_activations_map[1] = AI_C_ARRAY_INIT;
 static ai_ptr g_network_weights_map[1] = AI_C_ARRAY_INIT;
-
 
 
 /**  Array declarations section  **********************************************/
@@ -214,7 +212,6 @@ AI_TENSOR_OBJ_DECLARE(
   1, &obs_output_array, NULL)
 
 
-
 /**  Layer declarations section  **********************************************/
 
 
@@ -355,7 +352,6 @@ AI_NETWORK_OBJ_DECLARE(
 #endif	/*(AI_TOOLS_API_VERSION < AI_TOOLS_API_VERSION_1_5)*/
 
 
-
 /******************************************************************************/
 AI_DECLARE_STATIC
 ai_bool network_configure_activations(
@@ -385,8 +381,6 @@ ai_bool network_configure_activations(
   AI_ERROR_TRAP(net_ctx, INIT_FAILED, NETWORK_ACTIVATIONS);
   return false;
 }
-
-
 
 
 /******************************************************************************/
@@ -425,7 +419,6 @@ ai_bool network_configure_weights(
 
 
 /**  PUBLIC APIs SECTION  *****************************************************/
-
 
 
 AI_DEPRECATED
@@ -473,7 +466,6 @@ ai_bool ai_network_get_info(
   }
   return false;
 }
-
 
 
 AI_API_ENTRY
@@ -635,7 +627,6 @@ ai_i32 ai_network_forward(ai_handle network, const ai_buffer* input)
 {
   return ai_platform_network_process(network, input, NULL);
 }
-
 
 
 #undef AI_NETWORK_MODEL_SIGNATURE

@@ -34,7 +34,6 @@
 #define AI_NETWORK_DATA_ACTIVATION_1_SIZE    (512)
 
 
-
 #define AI_NETWORK_DATA_WEIGHTS_SIZES \
   { 20748, }
 #define AI_NETWORK_DATA_WEIGHTS_SIZE         (20748)
@@ -42,12 +41,10 @@
 #define AI_NETWORK_DATA_WEIGHT_1_SIZE        (20748)
 
 
-
 #define AI_NETWORK_DATA_ACTIVATIONS_TABLE_GET() \
   (&g_network_activations_table[1])
 
 extern ai_handle g_network_activations_table[1 + 2];
-
 
 
 #define AI_NETWORK_DATA_WEIGHTS_TABLE_GET() \

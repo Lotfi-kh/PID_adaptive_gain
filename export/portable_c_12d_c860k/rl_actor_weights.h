@@ -1,4 +1,4 @@
-/* AUTO-GENERATED from export/actor_joint_12d_c860k.onnx — do not edit. */
+/* AUTO-GENERATED from export/actor_joint_12d_c860k.onnx, do not edit. */
 #ifndef RL_ACTOR_WEIGHTS_H
 #define RL_ACTOR_WEIGHTS_H
 

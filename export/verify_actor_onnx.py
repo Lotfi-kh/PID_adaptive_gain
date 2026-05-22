@@ -8,7 +8,7 @@ Verify the exported ONNX actor:
 Read-only. Does not modify the source model or the ONNX file.
 
 Usage:
-    cd ~/rl_pid_tuner && python export/verify_actor_onnx.py
+    python export/verify_actor_onnx.py
 """
 import argparse
 import os
@@ -69,9 +69,9 @@ def main():
     in_shape  = [int(d) if isinstance(d, int) else 1 for d in in_meta.shape]
     out_shape = [int(d) if isinstance(d, int) else 1 for d in out_meta.shape]
     if in_shape != expected_in or out_shape != expected_out:
-        print(f"[VERIFY] WARN: shape mismatch — expected in={expected_in}, out={expected_out}")
+        print(f"[VERIFY] WARN: shape mismatch, expected in={expected_in}, out={expected_out}")
     else:
-        print(f"[VERIFY] Shapes match expected ({expected_in} → {expected_out}).")
+        print(f"[VERIFY] Shapes match expected ({expected_in} -> {expected_out}).")
 
     rng = np.random.default_rng(0)
     test_cases = {

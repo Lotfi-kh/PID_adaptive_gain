@@ -1,5 +1,5 @@
 {
-  "source_model": "/home/lotfikh/rl_pid_tuner/results/frozen_joint_12d_c860k/td3_pid_860000_steps.zip",
+  "source_model": "results/frozen_joint_12d_c860k/td3_pid_860000_steps.zip",
   "exported_at_utc": "2026-05-18T15:13:06Z",
   "exported_module": "policy.actor.mu",
   "framework": "stable-baselines3 TD3",
