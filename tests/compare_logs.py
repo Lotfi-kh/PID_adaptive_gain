@@ -53,7 +53,7 @@ def improvement(baseline_val, td3_val, label, lower_is_better=True):
 
 # ── Load baseline ─────────────────────────────────────────────────────────────
 
-baseline_path = os.path.join(RESULTS, "baseline_fixed.npz")
+baseline_path = os.path.join(RESULTS, "baseline_pybullet.npz")
 if not os.path.exists(baseline_path):
     print(f"[ERROR] Baseline results not found: {baseline_path}")
     print("        Run tests/baseline_fixed.py first.")
@@ -110,9 +110,9 @@ else:
 if args.eval_model:
     print(f"\n[LIVE EVAL] Loading model: {args.eval_model}")
     from stable_baselines3 import TD3 as _TD3
-    from envs import PX4GainTunerEnv
+    from envs import PyBulletPIDTunerEnv
 
-    eval_env = PX4GainTunerEnv(max_steps=500, init_noise=0.0)
+    eval_env = PyBulletPIDTunerEnv(max_steps=500, init_noise=0.0)
     model    = _TD3.load(args.eval_model, env=eval_env)
 
     eval_rr, eval_rew, eval_lengths, eval_crashes_list = [], [], [], []

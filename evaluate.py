@@ -8,7 +8,7 @@ Usage:
 import argparse
 import numpy as np
 from stable_baselines3 import TD3
-from envs import PX4GainTunerEnv
+from envs import PyBulletPIDTunerEnv
 
 
 def main():
@@ -17,11 +17,11 @@ def main():
     parser.add_argument("--episodes", type=int, default=5)
     args = parser.parse_args()
 
-    env   = PX4GainTunerEnv(max_steps=500, init_noise=0.0)
+    env   = PyBulletPIDTunerEnv(max_steps=500, init_noise=0.0)
     model = TD3.load(args.model, env=env, device="cpu")
 
     all_rewards = []
-    all_gains   = []
+    all_kp, all_ki, all_kd = [], [], []
 
     for ep in range(args.episodes):
         obs, _ = env.reset()
@@ -35,19 +35,19 @@ def main():
             done = terminated or truncated
 
         all_rewards.append(ep_reward)
-        all_gains.append(dict(info["gains"]))
-        print(f"\n[EP {ep+1}]  reward={ep_reward:.1f}  "
-              f"crashed={info['crashed']}")
-        for k, v in info["gains"].items():
-            print(f"    {k:20s} = {v:.5f}")
+        all_kp.append(info["Kp"])
+        all_ki.append(info["Ki"])
+        all_kd.append(info["Kd"])
+        print(f"\n[EP {ep+1}]  reward={ep_reward:.1f}  crashed={info['crashed']}")
+        print(f"    Kp_roll = {info['Kp']:.6f}  (default {PyBulletPIDTunerEnv.KP_DEFAULT:.6f})")
+        print(f"    Ki_roll = {info['Ki']:.6f}  (default {PyBulletPIDTunerEnv.KI_DEFAULT:.6f})")
+        print(f"    Kd_roll = {info['Kd']:.6f}  (default {PyBulletPIDTunerEnv.KD_DEFAULT:.6f})")
 
     print("\n── Average across episodes ──────────────────────────────")
-    print(f"Mean reward: {np.mean(all_rewards):.1f}")
-    print("\nMean tuned gains:")
-    for key in PX4GainTunerEnv.DEFAULT_GAINS:
-        vals = [g[key] for g in all_gains]
-        print(f"  {key:20s} = {np.mean(vals):.5f}  "
-              f"(default {PX4GainTunerEnv.DEFAULT_GAINS[key]:.5f})")
+    print(f"Mean reward : {np.mean(all_rewards):.1f}")
+    print(f"Mean Kp_roll: {np.mean(all_kp):.6f}  (default {PyBulletPIDTunerEnv.KP_DEFAULT:.6f})")
+    print(f"Mean Ki_roll: {np.mean(all_ki):.6f}  (default {PyBulletPIDTunerEnv.KI_DEFAULT:.6f})")
+    print(f"Mean Kd_roll: {np.mean(all_kd):.6f}  (default {PyBulletPIDTunerEnv.KD_DEFAULT:.6f})")
 
     env.close()
 

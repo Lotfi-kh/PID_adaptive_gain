@@ -25,3 +25,15 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+ results/
+  test_results/
+  st_ai_ws/
+  st_ai_output/
+  export/build/
+  EOF
+
+results/
+test_results/
+st_ai_ws/
+export/build
