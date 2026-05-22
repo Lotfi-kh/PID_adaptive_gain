@@ -307,7 +307,7 @@ if RUN_BASELINE and RUN_RL:
     for label, fmt in ROWS:
         lines.append(f"  {label:<26} {fmt(baseline):>22}  {fmt(rl):>22}")
 
-    lines.append("\n── Delta (positive = RL better) ────────────────────────────────────────────")
+    lines.append("\n-- Delta (positive = RL better) --")
     def drow(label, b, r, lower_better=True):
         d   = (b - r) if lower_better else (r - b)
         pct = 100 * d / (abs(b) + 1e-12)
@@ -335,7 +335,7 @@ report = "\n".join(lines)
 print("\n" + report)
 
 
-# ── Save NPZ + TXT ─────────────────────────────────────────────────────────────
+# save NPZ + TXT
 
 def pad(traj_list):
     if not traj_list: return np.zeros((0, 0))

@@ -136,9 +136,6 @@ class ActionNoiseDecayCallback(BaseCallback):
 def make_env(eval_mode: bool = False):
     if args.axis == "roll+pitch":
         tune_axes = ["roll", "pitch"]
-        # In training we randomize the disturbance axis at each reset
-        # (roll only, pitch only, or both). The eval env always uses both
-        # so the numbers stay comparable across runs.
         dist_axis = "random" if (args.randomize_disturbance and not eval_mode) else "both"
     else:
         tune_axes = [args.axis]
@@ -155,14 +152,11 @@ def make_env(eval_mode: bool = False):
         crash_penalty   = 50.0,
         stability_bonus = 20.0,
         init_noise      = 0.05,
-        # Disturbance randomization is on for training, off for eval.
         randomize_disturbance       = args.randomize_disturbance and not eval_mode,
         init_noise_range            = (args.init_noise_min,    args.init_noise_max),
         disturbance_step_range      = (args.dist_step_min,     args.dist_step_max),
         disturbance_magnitude_range = (args.dist_mag_min,      args.dist_mag_max),
         disturbance_duration_range  = (args.dist_duration_min, args.dist_duration_max),
-        # The eval env keeps the simple protocol (default gains, no hold
-        # or sustained episodes) so the numbers stay comparable.
         randomize_initial_gains     = args.randomize_initial_gains and not eval_mode,
         hold_episode_prob           = (0.0 if eval_mode else args.hold_episode_prob),
         sustained_episode_prob      = (0.0 if eval_mode else args.sustained_episode_prob),
@@ -254,10 +248,6 @@ def main():
     )
 
 
-    # When --resume is used, SB3 does effective_target = num_timesteps + steps.
-    # So we pass (total_target - current_steps) and let SB3 add it back.
-    # For example: target 1M, current 500k -> we pass 500k -> SB3 computes
-    # 500k + 500k = 1M -> the run does exactly 500k extra steps.
     if args.resume:
         remaining = HP["total_timesteps"] - model.num_timesteps
         if remaining <= 0:

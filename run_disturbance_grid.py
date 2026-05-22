@@ -80,7 +80,7 @@ def run_condition(noise, mag_label, mag_val):
     npz_path = os.path.join(out_dir, "disturbance_eval_results.npz")
 
     if args.reuse_existing and os.path.exists(npz_path):
-        print(f"\n[GRID] ── {tag}  (reusing existing NPZ) ──")
+        print(f"\n[GRID] {tag}  (reusing existing NPZ)")
     else:
         cmd = [
             PYTHON, SCRIPT,
@@ -98,7 +98,7 @@ def run_condition(noise, mag_label, mag_val):
         if args.no_plots:
             cmd.append("--no-plots")
 
-        print(f"\n[GRID] ── {tag}  noise={noise}  mag={mag_val:.1e} ({mag_label}) ──")
+        print(f"\n[GRID] {tag}  noise={noise}  mag={mag_val:.1e} ({mag_label})")
         print(f"[GRID] Output -> {out_dir}")
         t0 = time.time()
         result = subprocess.run(cmd, text=True)

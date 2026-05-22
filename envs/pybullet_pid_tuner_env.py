@@ -1,47 +1,24 @@
 """
-PyBullet environment for the adaptive PID gain tuning task on an F450
-quadrotor. The RL agent does not produce motor commands. It only moves
-the gains of the inner rate PID, while the PID itself stays the same.
+PyBullet environment for RL-based adaptive PID gain tuning on an F450 quadrotor.
+The agent adjusts the inner rate-PID gains (Kp, Ki, Kd) each control tick;
+the control law itself does not change.
 
-The environment is built on top of gym-pybullet-drones (BaseAviary).
+Modes (tune_axes):
+  ["roll"]         tunes roll gains only. 10-D obs, 3-D action.
+  ["pitch"]        tunes pitch gains only. 10-D obs, 3-D action.
+  ["roll","pitch"] shared action applied to both axes. 12-D obs, 3-D action.
+                   This is the deployed configuration.
 
-Modes (tune_axes parameter):
+Controller structure:
+  altitude PD       -> thrust
+  outer attitude P  -> roll/pitch rate setpoints
+  inner rate PID    -> roll torque   (tuned when "roll" in tune_axes)
+  inner rate PID    -> pitch torque  (tuned when "pitch" in tune_axes)
+  yaw rate P        -> yaw torque    (fixed)
 
-  ["roll"]           action [dKp, dKi, dKd] applied to roll only.
-                     Observation contains the roll gains. (10-D obs, 3-D act)
-
-  ["pitch"]          same idea but for pitch. (10-D obs, 3-D act)
-
-  ["roll","pitch"]   the shared mode used in this project. One single
-                     [dKp, dKi, dKd] action is applied to both axes at
-                     the same time. The observation contains the gains
-                     of both axes (they are always equal because the
-                     action is shared). (12-D obs, 3-D act)
-
-The disturbance_axis option selects where the external torque is applied
-during one episode: "roll", "pitch", "both", or "random" (drawn each reset).
-
-Controller structure (mirrors the PX4 MC rate loop):
-
-  altitude hold       -> total thrust
-  outer attitude P    -> rate setpoints (roll_rate_sp, pitch_rate_sp)
-  inner rate PID      -> roll torque   (tuned by RL when "roll" is in tune_axes)
-  inner rate PID      -> pitch torque  (tuned by RL when "pitch" is in tune_axes)
-  yaw rate P          -> yaw torque    (fixed, not tuned)
-
-Both rate PIDs are the same quality:
-  - derivative measured on rate, low-pass filtered (1-pole IIR, fc about
-    30 Hz at the 48 Hz control rate)
-  - torque-space anti-windup (the integral term is clipped to 30% of the
-    max XY torque, then back-computed)
-  - explicit clipping on the final torque
-
-F450 X-configuration motor layout (arm = 0.225 m, d = arm / sqrt(2) = 0.159 m):
-
-  motor 0: ( 0.159, -0.159, 0)  front-right  CCW
-  motor 1: (-0.159, -0.159, 0)  back-left    CW
-  motor 2: (-0.159,  0.159, 0)  back-right   CCW
-  motor 3: ( 0.159,  0.159, 0)  front-left   CW
+Rate PID:
+  - derivative on measurement, 1-pole IIR (~30 Hz at 48 Hz)
+  - torque-space anti-windup (clips I-torque to 30% of max, then back-computes)
 """
 
 import numpy as np
@@ -59,50 +36,29 @@ _PITCH = 1
 class PyBulletPIDTunerEnv(BaseAviary):
     """Gym environment where RL tunes the rate-PID gains of an F450 in PyBullet."""
 
-    # Gain bounds for the F450. They come from scaling the CF2X bounds by
-    # the inertia ratio (Ixx of the F450 is about 857 times the CF2X).
     KP_BOUNDS = (0.0,  1.72)
     KI_BOUNDS = (0.0,  0.172)
     KD_BOUNDS = (0.0,  8.6e-3)
 
-    # Defaults used as the starting point of every episode (except hold).
-    KP_DEFAULT = 0.171   # inner time constant Ixx/Kp is around 70 ms
+    KP_DEFAULT = 0.171
     KI_DEFAULT = 8.6e-3
     KD_DEFAULT = 1.71e-3
 
-    # A full-scale action of 1.0 moves a gain by about 2% of its range
-    # in one control step. Same fraction for the three gains.
-    DELTA_SCALE = np.array([3.4e-2, 3.4e-3, 1.7e-4])
+    DELTA_SCALE = np.array([3.4e-2, 3.4e-3, 1.7e-4])  # ~2% of each bound per step
 
-    # "Hold" episode. Near-level start with a small constant torque kept
-    # for the whole episode. To reject a constant torque without standing
-    # tilt the integral term is needed, so a policy that drops Ki keeps
-    # a residual attitude error and pays the w1 penalty all the way. The
-    # idea is to teach "do not touch the gains when the drone is stable"
-    # without changing any reward weight.
-    HOLD_INIT_NOISE      = 0.03   # rad, small initial tilt
-    HOLD_DIST_MAGNITUDE  = 0.03   # N.m, small constant torque on both axes
+    HOLD_INIT_NOISE     = 0.03
+    HOLD_DIST_MAGNITUDE = 0.03
 
-    # "Sustained" episode. Starts at the default gains and applies a
-    # moderate constant torque during the whole episode. Same reason as
-    # above: dropping Ki makes the policy pay every step.
     SUSTAINED_INIT_NOISE     = 0.03
     SUSTAINED_DIST_MAG_RANGE = (0.10, 0.15)
 
-    # Outer attitude P gain (fixed, not tuned by RL).
-    KP_ATT = 3.0
-
-    # Yaw is just a fixed proportional gain. Yaw is not in scope.
+    KP_ATT      = 3.0
     KP_YAW_RATE = 4.38e-2
+    KP_ALT      = 2.67
+    KD_ALT      = 1.78
 
-    # Altitude hold (PD on z).
-    KP_ALT = 2.67
-    KD_ALT = 1.78
+    _D_FILTER_ALPHA = 0.797  # 1-pole IIR ~30 Hz / 48 Hz
 
-    # Derivative filter alpha. 1-pole IIR, fc about 30 Hz at 48 Hz ctrl.
-    _D_FILTER_ALPHA = 0.797
-
-    # Crash thresholds.
     MAX_ROLL_RAD  = np.deg2rad(60)
     MAX_PITCH_RAD = np.deg2rad(60)
     MIN_ALT       = 0.15
@@ -150,15 +106,11 @@ class PyBulletPIDTunerEnv(BaseAviary):
                              "Use 'roll', 'pitch', 'both', or 'random'.")
 
         self._joint     = len(tune_axes) > 1
-        # In joint mode we always keep roll first, then pitch.
         self._tune_axes = ["roll", "pitch"] if self._joint else list(tune_axes)
         self._tuned_idx = None if self._joint else (_ROLL if tune_axes[0] == "roll" else _PITCH)
         self._dist_axis = disturbance_axis
-        # The actual axis used for this episode. Different from _dist_axis
-        # only when "random" is picked (then it is resolved at reset).
+        # resolved at reset if "random"
         self._active_dist_axis = "both" if disturbance_axis == "random" else disturbance_axis
-        # The action is always 3-D. In joint mode the same vector is
-        # applied to both roll and pitch.
         self._n_act = 3
 
         self.max_steps       = max_steps
@@ -178,10 +130,6 @@ class PyBulletPIDTunerEnv(BaseAviary):
         self._disturbance_step_range       = disturbance_step_range
         self._disturbance_magnitude_range  = disturbance_magnitude_range
         self._disturbance_duration_range   = disturbance_duration_range
-
-        # Mix of recovery and hold episodes with randomized starting gains.
-        # When the flags below are off the env reproduces the simple
-        # "fixed defaults + transient kick" behaviour.
         self._randomize_initial_gains      = randomize_initial_gains
         self._hold_episode_prob            = float(hold_episode_prob)
         self._init_gain_frac_range         = init_gain_frac_range
@@ -191,12 +139,10 @@ class PyBulletPIDTunerEnv(BaseAviary):
         self._sustained_dist_mag_range     = sustained_dist_mag_range
         self._is_sustained_episode         = False
 
-        # Per-axis PID state. Indexed by _ROLL / _PITCH. Must be set
-        # before super().__init__ because it calls _actionSpace and
-        # _observationSpace.
+        # must be set before super().__init__: action/obs spaces read from these
         self._gains      = np.array([
-            [self.KP_DEFAULT, self.KI_DEFAULT, self.KD_DEFAULT],  # roll
-            [self.KP_DEFAULT, self.KI_DEFAULT, self.KD_DEFAULT],  # pitch
+            [self.KP_DEFAULT, self.KI_DEFAULT, self.KD_DEFAULT],
+            [self.KP_DEFAULT, self.KI_DEFAULT, self.KD_DEFAULT],
         ], dtype=np.float64)
         self._integral   = np.zeros(2, dtype=np.float64)
         self._prev_rate  = np.zeros(2, dtype=np.float64)
@@ -257,7 +203,7 @@ class PyBulletPIDTunerEnv(BaseAviary):
                              kp_r, ki_r, kd_r,
                              kp_p, ki_p, kd_p], dtype=np.float32)
 
-        # Single-axis: the gain channels are the ones of the tuned axis.
+        # single-axis: use gains of the tuned axis
         kp_n = self._gains[self._tuned_idx][0] / self.KP_BOUNDS[1]
         ki_n = self._gains[self._tuned_idx][1] / self.KI_BOUNDS[1]
         kd_n = self._gains[self._tuned_idx][2] / self.KD_BOUNDS[1]
@@ -267,11 +213,9 @@ class PyBulletPIDTunerEnv(BaseAviary):
                          kp_n, ki_n, kd_n], dtype=np.float32)
 
     def _preprocessAction(self, action):
-        """Take the RL action and produce the four motor RPMs.
+        """Turn the RL action into four motor RPMs.
 
-        The function updates the tuned gains, runs the two rate PIDs,
-        adds altitude PD and the outer attitude P, then turns the
-        torques into RPMs through the inverse allocation.
+        Updates the gains, runs the rate PIDs, then maps torques to RPMs.
         """
         action = np.clip(action, -1.0, 1.0)
         self._prev_action = action.copy()
@@ -279,7 +223,7 @@ class PyBulletPIDTunerEnv(BaseAviary):
         gain_lo = np.array([self.KP_BOUNDS[0], self.KI_BOUNDS[0], self.KD_BOUNDS[0]])
         gain_hi = np.array([self.KP_BOUNDS[1], self.KI_BOUNDS[1], self.KD_BOUNDS[1]])
         if self._joint:
-            delta = action * self.DELTA_SCALE   # the same delta goes to both axes
+            delta = action * self.DELTA_SCALE
             self._gains[_ROLL]  = np.clip(self._gains[_ROLL]  + delta, gain_lo, gain_hi)
             self._gains[_PITCH] = np.clip(self._gains[_PITCH] + delta, gain_lo, gain_hi)
         else:
@@ -288,39 +232,32 @@ class PyBulletPIDTunerEnv(BaseAviary):
                 gain_lo, gain_hi,
             )
 
-        # Current state of the drone.
-        roll, pitch, _      = self.rpy[0]
-        pos_z               = self.pos[0, 2]
-        vel_z               = self.vel[0, 2]
-        body_rates          = self._world_to_body_rates(self.ang_v[0])
+        roll, pitch, _          = self.rpy[0]
+        pos_z                   = self.pos[0, 2]
+        vel_z                   = self.vel[0, 2]
+        body_rates              = self._world_to_body_rates(self.ang_v[0])
         roll_rate, pitch_rate, yaw_rate = body_rates
 
         dt = self.CTRL_TIMESTEP
 
-        # Altitude PD.
         hover_thrust = self.GRAVITY
         z_err        = self.target_alt - pos_z
         thrust       = hover_thrust + self.KP_ALT * z_err + self.KD_ALT * (-vel_z)
         thrust       = float(np.clip(thrust, 0.0, 2.0 * hover_thrust))
 
-        # Outer attitude loop, produces the rate setpoints.
         roll_rate_sp  = self.KP_ATT * (0.0 - roll)
         pitch_rate_sp = self.KP_ATT * (0.0 - pitch)
 
-        # Inner rate PIDs (the part that RL tunes).
         tau_roll  = self._run_rate_pid(_ROLL,  roll_rate_sp,  roll_rate,  *self._gains[_ROLL])
         tau_pitch = self._run_rate_pid(_PITCH, pitch_rate_sp, pitch_rate, *self._gains[_PITCH])
 
-        # Yaw stays simple, just a P on the yaw rate setpoint of 0.
         tau_yaw = self.KP_YAW_RATE * (0.0 - yaw_rate)
 
-        # Save the rates we just used so the reward sees the value from
-        # before physics is stepped.
+        # save before physics step so the reward sees pre-step rates
         self._prev_rate[_ROLL]  = roll_rate
         self._prev_rate[_PITCH] = pitch_rate
         self._step_count += 1
 
-        # Apply the external torque if we are inside the disturbance window.
         if (self._dist_step is not None
                 and self._dist_magnitude != 0.0
                 and self._dist_step <= self._step_count
@@ -330,7 +267,7 @@ class PyBulletPIDTunerEnv(BaseAviary):
                 torque_vec = [mag, 0.0, 0.0]
             elif self._active_dist_axis == "pitch":
                 torque_vec = [0.0, mag, 0.0]
-            else:   # "both"
+            else:
                 torque_vec = [mag, mag, 0.0]
             p.applyExternalTorque(
                 self.DRONE_IDS[0], -1, torque_vec,
@@ -356,10 +293,7 @@ class PyBulletPIDTunerEnv(BaseAviary):
         w1, w2, w3, w4 = self.reward_w1, self.reward_w2, self.reward_w3, self.reward_w4
         dt = self.CTRL_TIMESTEP
 
-        att_err = roll**2 + pitch**2
-
-        # The action is 3-D in both joint and single-axis mode, so this
-        # term is computed the same way for both.
+        att_err     = roll**2 + pitch**2
         gain_change = float(np.sum(self._prev_action ** 2))
 
         if self._joint:
@@ -430,8 +364,7 @@ class PyBulletPIDTunerEnv(BaseAviary):
             info["Kp_pitch"]  = float(self._gains[_PITCH][0])
             info["Ki_pitch"]  = float(self._gains[_PITCH][1])
             info["Kd_pitch"]  = float(self._gains[_PITCH][2])
-            # Old code expects Kp/Ki/Kd without a suffix. We expose the
-            # roll values under those names so the existing scripts work.
+            # compat alias for eval scripts
             info["Kp"], info["Ki"], info["Kd"] = info["Kp_roll"], info["Ki_roll"], info["Kd_roll"]
         else:
             kp, ki, kd = self._gains[self._tuned_idx]
@@ -443,11 +376,7 @@ class PyBulletPIDTunerEnv(BaseAviary):
     def reset(self, seed=None, options=None):
         rng = np.random.default_rng(seed)
 
-        # We pick the episode type with a single draw in [0,1):
-        #   [0, hold_p)                    -> hold      (gentle, random gains)
-        #   [hold_p, hold_p + sus_p)       -> sustained (default gains,
-        #                                                moderate torque)
-        #   [hold_p + sus_p, 1)            -> recovery  (transient kick)
+        # one draw splits into: hold | sustained | recovery
         _r = float(rng.random())
         self._is_hold_episode = (
             self._hold_episode_prob > 0.0 and _r < self._hold_episode_prob
@@ -470,18 +399,13 @@ class PyBulletPIDTunerEnv(BaseAviary):
         else:
             self._active_dist_axis = "both" if self._dist_axis == "random" else self._dist_axis
 
-        # Hold episode: near-level start with a small constant torque on
-        # for the full episode. If the policy drops Ki it keeps a residual
-        # tilt that w1 penalises every step.
         if self._is_hold_episode:
             self.init_noise        = self.HOLD_INIT_NOISE
             self._dist_magnitude   = self.HOLD_DIST_MAGNITUDE
-            self._dist_step        = 1                  # torque on from step 1
-            self._dist_duration    = self.max_steps     # until the end
-            self._active_dist_axis = "both"             # both axes excited
+            self._dist_step        = 1
+            self._dist_duration    = self.max_steps
+            self._active_dist_axis = "both"
 
-        # Sustained: default gains, moderate constant torque on the whole
-        # episode. Same idea as hold but with a stronger torque.
         if self._is_sustained_episode:
             self.init_noise        = self.SUSTAINED_INIT_NOISE
             self._dist_magnitude   = float(rng.uniform(*self._sustained_dist_mag_range))
@@ -492,8 +416,6 @@ class PyBulletPIDTunerEnv(BaseAviary):
         self._step_count  = 0
 
         if self._is_sustained_episode:
-            # Always start at the training defaults. The point here is
-            # "do not destroy a healthy Ki", not "recover from bad gains".
             self._gains = np.array([
                 [self.KP_DEFAULT, self.KI_DEFAULT, self.KD_DEFAULT],
                 [self.KP_DEFAULT, self.KI_DEFAULT, self.KD_DEFAULT],
@@ -537,8 +459,7 @@ class PyBulletPIDTunerEnv(BaseAviary):
         )
         self._updateAndStoreKinematicInformation()
 
-        # Seed the derivative state with the real post-reset rates so the
-        # first control step does not see a fake big derivative spike.
+        # init from real rates to avoid a derivative spike on the first step
         body_rates = self._world_to_body_rates(self.ang_v[0])
         self._prev_rate[_ROLL]  = float(body_rates[0])
         self._prev_rate[_PITCH] = float(body_rates[1])
@@ -547,15 +468,11 @@ class PyBulletPIDTunerEnv(BaseAviary):
 
 
     def _sample_initial_gains(self, rng, mode):
-        """Pick a [Kp, Ki, Kd] start vector for one episode.
+        """Sample [Kp, Ki, Kd] at episode start.
 
-        mode="recovery": uniform over a fraction of the full bounds. This
-            exposes the policy to gain values it would not normally reach
-            by itself.
-        mode="hold": a multiplier band around the training defaults. The
-            band is small enough that a level start with these gains stays
-            level, so the only useful action is around zero. This teaches
-            the policy to leave the gains alone when nothing is wrong.
+        mode="recovery": uniform over a fraction of the full bounds.
+        mode="hold": multiplier around the defaults, so the drone stays level
+            and the right action is close to zero.
         """
         gain_lo = np.array([self.KP_BOUNDS[0], self.KI_BOUNDS[0], self.KD_BOUNDS[0]])
         gain_hi = np.array([self.KP_BOUNDS[1], self.KI_BOUNDS[1], self.KD_BOUNDS[1]])
@@ -563,33 +480,29 @@ class PyBulletPIDTunerEnv(BaseAviary):
             lo, hi = self._hold_gain_mult_range
             m = rng.uniform(lo, hi, 3)
             g = np.array([self.KP_DEFAULT, self.KI_DEFAULT, self.KD_DEFAULT]) * m
-        else:  # "recovery"
+        else:
             lo, hi = self._init_gain_frac_range
             f = rng.uniform(lo, hi, 3)
             g = gain_hi * f
         return np.clip(g, gain_lo, gain_hi)
 
     def _run_rate_pid(self, axis_idx, rate_sp, rate, kp, ki, kd):
-        """Run one rate-PID axis for one timestep. Returns the clipped torque in N.m.
+        """Run one PID axis for one timestep. Returns the clipped torque (N.m).
 
-        The function updates self._integral[axis_idx] and self._d_filtered[axis_idx]
-        in place. It does not update self._prev_rate. The caller does that
-        after both axes are done, so the reward sees the rate from before
-        physics is stepped.
+        Updates self._integral[axis_idx] and self._d_filtered[axis_idx] in place.
+        Does not update self._prev_rate; the caller does that after both axes.
         """
         dt  = self.CTRL_TIMESTEP
         err = rate_sp - rate
 
-        # Anti-windup is done in torque space: we clip the integral term
-        # to 30% of the max XY torque, then back-compute the integral so
-        # the I-state stays consistent with what was actually applied.
+        # torque-space anti-windup: clip I-torque then back-compute integral state
         self._integral[axis_idx] += err * dt
         tau_I_max = 0.30 * self.MAX_XY_TORQUE
         tau_I     = ki * self._integral[axis_idx]
         tau_I     = float(np.clip(tau_I, -tau_I_max, tau_I_max))
         self._integral[axis_idx] = tau_I / (ki + 1e-12)
 
-        # Derivative on measurement, with a 1-pole IIR low-pass filter.
+        # filtered derivative
         d_raw = -(rate - self._prev_rate[axis_idx]) / dt
         self._d_filtered[axis_idx] = (
             self._D_FILTER_ALPHA * self._d_filtered[axis_idx]
@@ -600,7 +513,7 @@ class PyBulletPIDTunerEnv(BaseAviary):
         return float(np.clip(tau, -self.MAX_XY_TORQUE, self.MAX_XY_TORQUE))
 
     def _build_inv_alloc(self):
-        # Inverse mixer for the F450 in X-configuration.
+        # inverse mixer, F450 X-configuration
         d  = self.L / np.sqrt(2)
         kf = self.KF
         km = self.KM
