@@ -34,6 +34,8 @@ Motor layout (F450 X-config, arm=0.225 m, d=arm/sqrt(2)=0.159 m):
   Motor 3: ( 0.159,  0.159, 0)  front-left   CW
 """
 
+from collections import deque
+
 import numpy as np
 import pybullet as p
 import gymnasium as gym
@@ -61,6 +63,17 @@ class PyBulletPIDTunerEnv(BaseAviary):
     # max delta per step ≈ 2 % of full range
     DELTA_SCALE = np.array([3.4e-2, 3.4e-3, 1.7e-4])
 
+    # Reference control torque for the effort penalty (N·m). A typical working
+    # torque, NOT the max — normalizing τ² by this makes the w5 effort term O(1)
+    # when the controller is active, so the penalty actually has teeth.
+    TAU_EFFORT_REF = 0.10
+
+    # Attitude band (rad², = roll²+pitch²) below which the drone counts as "calm"
+    # for the optional hover-quietness penalty (reward_w6). ~0.07 rad ≈ 4° budget
+    # split across both axes. Inside this band, and with no disturbance active, the
+    # policy is expected to leave the gains alone.
+    CALM_ATT_THRESH = 5.0e-3
+
     # ── Hold-episode excitation ──────────────────────────────────────────────
     # A "hold" episode is a near-stable hover with a small CONSTANT torque held
     # for the whole episode. Only the I-term can null a constant disturbance
@@ -78,6 +91,26 @@ class PyBulletPIDTunerEnv(BaseAviary):
     # "spike Kp, dump Ki" transient exploit expensive — no reward-weight change.
     SUSTAINED_INIT_NOISE     = 0.03          # rad — small initial tilt
     SUSTAINED_DIST_MAG_RANGE = (0.10, 0.15)  # N·m — moderate constant torque
+
+    # ── Wind episode (Ornstein-Uhlenbeck gusting TORQUE) ─────────────────────
+    # The Gazebo SITL OOD failure: under continuous wind the policy never settles,
+    # it churns Kp the whole episode (gain total-variation ≫ baseline's 0) because
+    # a stochastic, time-VARYING disturbance never appears in the torque-only
+    # training mix above (those are all transient kicks or CONSTANT holds). The
+    # data is clear that the *steady* lean was a tie between controllers — only the
+    # gusting/transient response regressed — so the missing ingredient is the GUST,
+    # not the mean. This env models the rate loop (no position-hold loop), so wind
+    # enters at the rate loop as a torque: a sustained mean torque (like the
+    # sustained episode) PLUS an Ornstein-Uhlenbeck gusting component, held for the
+    # whole episode, random direction in the (roll,pitch) plane. Like the sustained
+    # episode it starts from the training-default gains — the lesson is "ride out
+    # the gusts without thrashing the gains", which stable Kp/Ki already does. No
+    # reward-weight change; the fix is purely distributional. Torques in N·m:
+    WIND_INIT_NOISE         = 0.03            # rad — small initial tilt
+    WIND_MEAN_TORQUE_RANGE  = (0.06, 0.12)    # N·m — sustained component magnitude
+    WIND_GUST_SIGMA         = 0.05            # N·m — OU gust intensity
+    WIND_THETA              = 0.10            # OU mean-reversion rate
+    WIND_MAX_TORQUE         = 0.20            # N·m — cap (stays recoverable)
 
     # ── Fixed outer attitude-P gain (dimensionless, same for both axes) ───────
     KP_ATT = 3.0
@@ -108,6 +141,8 @@ class PyBulletPIDTunerEnv(BaseAviary):
                  reward_w2: float = 2.0,
                  reward_w3: float = 0.1,
                  reward_w4: float = 0.001,
+                 reward_w5: float = 0.0,   # effort (∫τ²) penalty — 0.0 = frozen reward
+                 reward_w6: float = 0.0,   # hover-quietness penalty — 0.0 = frozen reward
                  crash_penalty: float = 50.0,
                  stability_bonus: float = 200.0,
                  disturbance_step: int = None,
@@ -124,6 +159,17 @@ class PyBulletPIDTunerEnv(BaseAviary):
                  hold_gain_mult_range: tuple = (0.5, 3.0),
                  sustained_episode_prob: float = 0.0,
                  sustained_dist_mag_range: tuple = SUSTAINED_DIST_MAG_RANGE,
+                 wind_episode_prob: float = 0.0,
+                 wind_mean_torque_range: tuple = WIND_MEAN_TORQUE_RANGE,
+                 wind_gust_sigma: float = WIND_GUST_SIGMA,
+                 wind_theta: float = WIND_THETA,
+                 wind_max_torque: float = WIND_MAX_TORQUE,
+                 randomize_dynamics: bool = False,
+                 mass_frac_range: tuple = (0.8, 1.2),
+                 inertia_frac_range: tuple = (0.7, 1.3),
+                 sensor_noise_att: float = 0.0,    # rad      (gyro/attitude noise σ)
+                 sensor_noise_rate: float = 0.0,   # rad/s    (rate-gyro noise σ)
+                 control_latency_steps: int = 0,   # ctrl steps of actuation delay
                  gui: bool = False):
 
         if tune_axes is None:
@@ -156,6 +202,27 @@ class PyBulletPIDTunerEnv(BaseAviary):
         self.reward_w2       = reward_w2
         self.reward_w3       = reward_w3
         self.reward_w4       = reward_w4
+        self.reward_w5       = reward_w5
+        self.reward_w6       = reward_w6
+        self._last_tau_sq    = 0.0   # ∫τ² this step, for the effort penalty
+        # Dynamics randomization (off by default → nominal airframe, legacy behavior).
+        # Perturbs the PyBullet body's mass/inertia each episode via changeDynamics
+        # (NOT a URDF edit). The controller keeps nominal-tuned gains, so off-nominal
+        # episodes make the static gains mismatched — the regime where adaptive helps.
+        self._randomize_dynamics = bool(randomize_dynamics)
+        self._mass_frac_range    = mass_frac_range
+        self._inertia_frac_range = inertia_frac_range
+        self._dyn_mass_frac      = 1.0   # logged each episode
+        self._dyn_inertia_frac   = 1.0
+        # Sensor noise + control latency (off by default → noise-free, zero-delay,
+        # legacy behavior). These make high gains COSTLY (noise amplification +
+        # phase lag) so the policy can no longer win by simply maxing the gains —
+        # the realism that makes adaptive-vs-static a fair, transferable comparison.
+        self._sensor_noise_att     = float(sensor_noise_att)
+        self._sensor_noise_rate    = float(sensor_noise_rate)
+        self._control_latency_steps = int(control_latency_steps)
+        self._noise_rng            = np.random.default_rng()
+        self._lat_buf              = None   # deque of delayed rpm commands
         self.crash_penalty   = crash_penalty
         self.stability_bonus = stability_bonus
         self._dist_step      = disturbance_step
@@ -177,6 +244,17 @@ class PyBulletPIDTunerEnv(BaseAviary):
         self._sustained_episode_prob       = float(sustained_episode_prob)
         self._sustained_dist_mag_range     = sustained_dist_mag_range
         self._is_sustained_episode         = False
+        # Wind episode: OU-gusting torque (sustained mean + gusts), N·m.
+        # All default-off so legacy runs reproduce exactly.
+        self._wind_episode_prob            = float(wind_episode_prob)
+        self._wind_mean_torque_range       = wind_mean_torque_range
+        self._wind_gust_sigma              = float(wind_gust_sigma)
+        self._wind_theta                   = float(wind_theta)
+        self._wind_max_torque              = float(wind_max_torque)
+        self._is_wind_episode              = False
+        self._wind_mean = np.zeros(2, dtype=np.float64)   # episode mean torque (N·m) [roll,pitch]
+        self._wind_ou   = np.zeros(2, dtype=np.float64)   # current OU torque state (N·m)
+        self._wind_rng  = np.random.default_rng()         # per-step gust noise stream
 
         # Per-axis PID state — arrays indexed by _ROLL / _PITCH.
         # Must be set before super().__init__ calls _actionSpace / _observationSpace.
@@ -204,6 +282,13 @@ class PyBulletPIDTunerEnv(BaseAviary):
 
         self._build_inv_alloc()
 
+        # Nominal mass/inertia captured AFTER super().__init__ (loads them from the
+        # URDF). Dynamics randomization scales these per episode without editing the
+        # URDF; nominal stays the controller's tuning point.
+        self._nom_mass    = float(self.M)
+        self._nom_inertia = np.array([self.J[0, 0], self.J[1, 1], self.J[2, 2]],
+                                     dtype=np.float64)
+
     # ── BaseAviary abstract method implementations ─────────────────────────
 
     def _actionSpace(self):
@@ -220,11 +305,25 @@ class PyBulletPIDTunerEnv(BaseAviary):
             obs_high = np.array([ np.pi,  np.pi,  20.,  20.,  20.,  20., 1., 1., 1.], dtype=np.float32)
         return spaces.Box(low=obs_low, high=obs_high, dtype=np.float32)
 
+    def _noisy_meas(self, roll, pitch, roll_rate, pitch_rate):
+        """Corrupt the attitude/rate measurement the controller & policy SEE with
+        Gaussian sensor noise (true state is unchanged). A fresh sample per call.
+        No-op when both σ are 0 (default)."""
+        if self._sensor_noise_att <= 0.0 and self._sensor_noise_rate <= 0.0:
+            return roll, pitch, roll_rate, pitch_rate
+        na, nr = self._sensor_noise_att, self._sensor_noise_rate
+        g = self._noise_rng.standard_normal(4)
+        return (roll + na * g[0], pitch + na * g[1],
+                roll_rate + nr * g[2], pitch_rate + nr * g[3])
+
     def _computeObs(self):
         roll, pitch, _  = self.rpy[0]
         ang_w           = self.ang_v[0]
         body_rates      = self._world_to_body_rates(ang_w)
         roll_rate, pitch_rate, _ = body_rates
+        # The policy observes the noisy sensor, same as the controller.
+        roll, pitch, roll_rate, pitch_rate = self._noisy_meas(
+            roll, pitch, roll_rate, pitch_rate)
 
         roll_rate_sp   = self.KP_ATT * (0.0 - roll)
         pitch_rate_sp  = self.KP_ATT * (0.0 - pitch)
@@ -274,12 +373,15 @@ class PyBulletPIDTunerEnv(BaseAviary):
                 gain_lo, gain_hi,
             )
 
-        # Current state
+        # Current state — the attitude/rate the CONTROLLER acts on is the noisy
+        # sensor reading (altitude/yaw kept clean: out of scope for the rate study).
         roll, pitch, _      = self.rpy[0]
         pos_z               = self.pos[0, 2]
         vel_z               = self.vel[0, 2]
         body_rates          = self._world_to_body_rates(self.ang_v[0])
         roll_rate, pitch_rate, yaw_rate = body_rates
+        roll, pitch, roll_rate, pitch_rate = self._noisy_meas(
+            roll, pitch, roll_rate, pitch_rate)
 
         dt = self.CTRL_TIMESTEP
 
@@ -296,6 +398,8 @@ class PyBulletPIDTunerEnv(BaseAviary):
         # ── Both rate PIDs: same quality, shared helper ───────────────────────
         tau_roll  = self._run_rate_pid(_ROLL,  roll_rate_sp,  roll_rate,  *self._gains[_ROLL])
         tau_pitch = self._run_rate_pid(_PITCH, pitch_rate_sp, pitch_rate, *self._gains[_PITCH])
+        # Control effort this step (roll+pitch), for the optional w5 penalty.
+        self._last_tau_sq = float(tau_roll * tau_roll + tau_pitch * tau_pitch)
 
         # ── Yaw rate P (fixed, zero setpoint) ────────────────────────────────
         tau_yaw = self.KP_YAW_RATE * (0.0 - yaw_rate)
@@ -322,8 +426,32 @@ class PyBulletPIDTunerEnv(BaseAviary):
                 flags=p.LINK_FRAME, physicsClientId=self.CLIENT,
             )
 
-        rpms = self._torques_to_rpms(thrust, tau_roll, tau_pitch, tau_yaw)
-        return rpms.reshape(1, 4)
+        # ── Wind episode: OU-gusting torque (mean + gusts), both axes ────────
+        if self._is_wind_episode:
+            dt = self.CTRL_TIMESTEP
+            dw = self._wind_rng.standard_normal(2)
+            self._wind_ou = (
+                self._wind_ou
+                + self._wind_theta * (self._wind_mean - self._wind_ou) * dt
+                + self._wind_gust_sigma * np.sqrt(dt) * dw
+            )
+            tau = np.clip(self._wind_ou, -self._wind_max_torque, self._wind_max_torque)
+            # Applied once per control step in the body frame — same convention as
+            # the transient/sustained torque-kick path above.
+            p.applyExternalTorque(
+                self.DRONE_IDS[0], -1,
+                [float(tau[0]), float(tau[1]), 0.0],
+                flags=p.LINK_FRAME, physicsClientId=self.CLIENT,
+            )
+
+        rpms = self._torques_to_rpms(thrust, tau_roll, tau_pitch, tau_yaw).reshape(1, 4)
+        # Control latency: the plant receives the command from N steps ago (the
+        # buffer is pre-filled with hover RPM in reset). Phase lag → high gains
+        # overshoot/oscillate, so the policy can't win by simply maxing the gains.
+        if self._lat_buf is not None:
+            self._lat_buf.append(rpms)
+            rpms = self._lat_buf.popleft()
+        return rpms
 
     def _computeReward(self):
         roll, pitch, _ = self.rpy[0]
@@ -364,7 +492,32 @@ class PyBulletPIDTunerEnv(BaseAviary):
             rate_err    = (rate_sp - rate) ** 2
             oscillation = ((rate - prev_rate) / dt) ** 2
 
-        step_reward = -(w1*att_err + w2*rate_err + w3*gain_change + w4*oscillation)
+        # Optional effort penalty (w5=0 by default → identical to the frozen reward).
+        # Penalizes τ² normalized by a TYPICAL control torque (TAU_EFFORT_REF), NOT
+        # the much-larger max torque — normalizing by max made the term ~2% of the
+        # attitude term (toothless), so the policy just cranked gains for tighter
+        # tracking at the cost of torque. With this scale the term is O(1) when the
+        # controller works hard, so w5 actually shapes behavior toward LESS torque.
+        w5 = self.reward_w5
+        effort = self._last_tau_sq / (self.TAU_EFFORT_REF ** 2)
+
+        # Optional hover-quietness penalty (w6=0 by default → identical to the frozen
+        # reward). Penalizes the action (gain change) ONLY when the TRUE state is calm
+        # AND no disturbance is active — i.e. when the policy should be doing nothing.
+        # This targets noiselat's twitchiness (it reacts to sensor noise in hover)
+        # without touching its response to real disturbances, which are gated out here.
+        w6 = self.reward_w6
+        quiet = 0.0
+        if w6 != 0.0:
+            dist_active = self._is_wind_episode or (
+                self._dist_step is not None
+                and self._dist_magnitude != 0.0
+                and self._dist_step < self._step_count <= self._dist_step + self._dist_duration)
+            if (not dist_active) and att_err < self.CALM_ATT_THRESH:
+                quiet = gain_change
+
+        step_reward = -(w1*att_err + w2*rate_err + w3*gain_change
+                        + w4*oscillation + w5*effort + w6*quiet)
 
         if self._step_count >= self.max_steps:
             step_reward += self.stability_bonus
@@ -388,7 +541,7 @@ class PyBulletPIDTunerEnv(BaseAviary):
         roll, pitch, _ = self.rpy[0]
         body_rates      = self._world_to_body_rates(self.ang_v[0])
         roll_rate, pitch_rate, _ = body_rates
-        dist_active = (
+        dist_active = self._is_wind_episode or (
             self._dist_step is not None
             and self._dist_magnitude != 0.0
             and self._dist_step < self._step_count <= self._dist_step + self._dist_duration
@@ -405,6 +558,12 @@ class PyBulletPIDTunerEnv(BaseAviary):
             "disturbance_axis"   : self._active_dist_axis,
             "hold_episode"       : bool(self._is_hold_episode),
             "sustained_episode"  : bool(self._is_sustained_episode),
+            "wind_episode"       : bool(self._is_wind_episode),
+            "wind_torque_Nm"     : (float(np.linalg.norm(self._wind_ou))
+                                    if self._is_wind_episode else 0.0),
+            "mass_frac"          : float(self._dyn_mass_frac),
+            "inertia_frac"       : float(self._dyn_inertia_frac),
+            "effort_tau_sq"      : float(self._last_tau_sq),
         }
         if self._joint:
             info["tune_axis"] = "roll+pitch"
@@ -428,18 +587,29 @@ class PyBulletPIDTunerEnv(BaseAviary):
         rng = np.random.default_rng(seed)
 
         # Episode type — single cumulative draw over [0,1):
-        #   [0, hold_p)                  → hold      (gentle, random gains)
-        #   [hold_p, hold_p+sus_p)       → sustained (default gains, moderate
-        #                                              constant torque)
-        #   [hold_p+sus_p, 1)            → recovery  (legacy transient kick)
+        #   [0, hold_p)                       → hold      (gentle, random gains)
+        #   [hold_p, hold_p+sus_p)            → sustained (default gains, moderate
+        #                                                   constant torque)
+        #   [hold_p+sus_p, +wind_p)           → wind      (default gains, OU gusting
+        #                                                   lateral force)
+        #   [hold_p+sus_p+wind_p, 1)          → recovery  (legacy transient kick)
         _r = float(rng.random())
+        _p_hold = self._hold_episode_prob
+        _p_sus  = self._sustained_episode_prob
+        _p_wind = self._wind_episode_prob
         self._is_hold_episode = (
-            self._hold_episode_prob > 0.0 and _r < self._hold_episode_prob
+            _p_hold > 0.0 and _r < _p_hold
         )
         self._is_sustained_episode = (
-            self._sustained_episode_prob > 0.0
+            _p_sus > 0.0
             and not self._is_hold_episode
-            and _r < self._hold_episode_prob + self._sustained_episode_prob
+            and _r < _p_hold + _p_sus
+        )
+        self._is_wind_episode = (
+            _p_wind > 0.0
+            and not self._is_hold_episode
+            and not self._is_sustained_episode
+            and _r < _p_hold + _p_sus + _p_wind
         )
 
         if self._randomize_disturbance:
@@ -475,11 +645,28 @@ class PyBulletPIDTunerEnv(BaseAviary):
             self._dist_duration    = self.max_steps     # … for the whole episode
             self._active_dist_axis = "both"             # excite roll and pitch
 
+        # Wind: OU-gusting torque (sustained mean + gusts) held the whole episode.
+        # The torque-kick path is disabled — the wind torque is applied directly in
+        # _preprocessAction. Mean magnitude is domain-randomized; direction is
+        # uniform in the (roll,pitch) plane so both axes are excited. The OU state
+        # starts at the mean and gusts each step. Small initial tilt as elsewhere.
+        if self._is_wind_episode:
+            self.init_noise        = self.WIND_INIT_NOISE
+            self._dist_magnitude   = 0.0                # no separate torque kick
+            self._dist_step        = None               # …keep the kick path off
+            self._active_dist_axis = "both"
+            tmag = float(rng.uniform(*self._wind_mean_torque_range))
+            ang  = float(rng.uniform(0.0, 2.0 * np.pi))
+            self._wind_mean = np.array([tmag * np.cos(ang), tmag * np.sin(ang)])
+            self._wind_ou   = self._wind_mean.copy()
+            # Tie the per-step gust stream to this episode's rng for reproducibility
+            self._wind_rng  = np.random.default_rng(int(rng.integers(0, 2**32)))
+
         self._step_count  = 0
 
-        if self._is_sustained_episode:
-            # Always the training defaults — the lesson is "do not destroy a
-            # healthy Ki", not "recover from bad gains".
+        if self._is_sustained_episode or self._is_wind_episode:
+            # Always the training defaults — the lesson is "hold a steady lean
+            # without thrashing the gains", not "recover from bad gains".
             self._gains = np.array([
                 [self.KP_DEFAULT, self.KI_DEFAULT, self.KD_DEFAULT],
                 [self.KP_DEFAULT, self.KI_DEFAULT, self.KD_DEFAULT],
@@ -503,6 +690,33 @@ class PyBulletPIDTunerEnv(BaseAviary):
             np.random.seed(seed)
 
         obs, info = super().reset(seed=seed, options=options)
+
+        # Off-nominal dynamics this episode (after super().reset has (re)created the
+        # body). Scales the PyBullet body's mass + inertia; the controller keeps
+        # nominal-tuned gains, so static gains are mismatched and adaptive can help.
+        if self._randomize_dynamics:
+            self._dyn_mass_frac    = float(rng.uniform(*self._mass_frac_range))
+            self._dyn_inertia_frac = float(rng.uniform(*self._inertia_frac_range))
+            ixx, iyy, izz = self._nom_inertia
+            p.changeDynamics(
+                self.DRONE_IDS[0], -1,
+                mass=self._nom_mass * self._dyn_mass_frac,
+                localInertiaDiagonal=[ixx * self._dyn_inertia_frac,
+                                      iyy * self._dyn_inertia_frac,
+                                      izz * self._dyn_inertia_frac],
+                physicsClientId=self.CLIENT,
+            )
+        else:
+            self._dyn_mass_frac = self._dyn_inertia_frac = 1.0
+
+        # Per-episode sensor-noise stream (reproducible per seed) and the control-
+        # latency buffer pre-filled with hover RPM so early steps see no spurious kick.
+        self._noise_rng = np.random.default_rng(int(rng.integers(0, 2**32)))
+        if self._control_latency_steps > 0:
+            hover = np.full((1, 4), self.HOVER_RPM, dtype=np.float64)
+            self._lat_buf = deque(hover.copy() for _ in range(self._control_latency_steps))
+        else:
+            self._lat_buf = None
 
         noise_rpy   = (np.random.uniform(-self.init_noise, self.init_noise, 3)
                        if self.init_noise > 0.0 else np.zeros(3))

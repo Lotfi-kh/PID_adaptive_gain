@@ -22,6 +22,7 @@ from stable_baselines3.common.callbacks import (
 )
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.noise import NormalActionNoise
+from stable_baselines3.common.utils import set_random_seed
 import numpy as np
 
 from envs import PX4GainTunerEnv, PyBulletPIDTunerEnv
@@ -60,6 +61,50 @@ parser.add_argument("--sustained-episode-prob", type=float, default=0.0,
                          "expensive. Try 0.25.")
 parser.add_argument("--sustained-dist-mag-min", type=float, default=0.10)
 parser.add_argument("--sustained-dist-mag-max", type=float, default=0.15)
+# ── Wind episodes (continuous-wind OOD fix) ───────────────────────────────────
+parser.add_argument("--wind-episode-prob", type=float, default=0.0,
+                    help="Fraction of episodes that are 'wind': default gains + an "
+                         "Ornstein-Uhlenbeck GUSTING torque (sustained mean + "
+                         "gusts) for the whole episode. Adds the time-varying "
+                         "disturbance the Gazebo wind test exposed as missing. "
+                         "Try 0.25 (mixed with hold/sustained/recovery).")
+parser.add_argument("--wind-mean-torque-min", type=float, default=0.06,
+                    help="Min magnitude of the wind episode's sustained mean torque (N·m).")
+parser.add_argument("--wind-mean-torque-max", type=float, default=0.12,
+                    help="Max magnitude of the wind episode's sustained mean torque (N·m).")
+parser.add_argument("--wind-gust-sigma", type=float, default=0.05,
+                    help="OU gust intensity for wind episodes (N·m).")
+parser.add_argument("--wind-max-torque", type=float, default=0.20,
+                    help="Cap on wind episode |torque| (N·m), keeps it recoverable.")
+# ── Dynamics randomization (off-nominal mass/inertia → where adaptive wins) ────
+parser.add_argument("--randomize-dynamics", action="store_true",
+                    help="Perturb the body mass+inertia each episode (PyBullet "
+                         "changeDynamics, NOT a URDF edit). Static gains tuned for "
+                         "nominal become mismatched off-nominal — the regime where "
+                         "an adaptive controller can beat fixed gains.")
+parser.add_argument("--mass-frac-min", type=float, default=0.8)
+parser.add_argument("--mass-frac-max", type=float, default=1.2)
+parser.add_argument("--inertia-frac-min", type=float, default=0.7)
+parser.add_argument("--inertia-frac-max", type=float, default=1.3)
+# ── Effort penalty (drives 'less torque'; 0.0 keeps the frozen reward) ─────────
+parser.add_argument("--reward-w5", type=float, default=0.0,
+                    help="Weight on the ∫τ² effort penalty. 0.0 = frozen reward "
+                         "(reproduces the benchmark). With the fixed normalization, "
+                         "w5≈0.2 makes effort ~30%% of the other terms.")
+# ── Hover-quietness penalty (targets noiselat twitchiness; 0.0 keeps frozen reward)
+parser.add_argument("--reward-w6", type=float, default=0.0,
+                    help="Weight on the gated hover-quietness penalty (action² applied "
+                         "ONLY when the true state is calm and no disturbance is active). "
+                         "0.0 = frozen reward. Use to make a noise-trained policy "
+                         "effectively inactive in hover without hurting disturbance response.")
+# ── Sensor noise + control latency (realism: makes high gains COSTLY) ──────────
+parser.add_argument("--sensor-noise-att", type=float, default=0.0,
+                    help="σ of Gaussian attitude-sensor noise (rad). e.g. 0.005 ≈ 0.3°.")
+parser.add_argument("--sensor-noise-rate", type=float, default=0.0,
+                    help="σ of Gaussian rate-gyro noise (rad/s). e.g. 0.02.")
+parser.add_argument("--control-latency-steps", type=int, default=0,
+                    help="Actuation delay in control steps (1 step ≈ 21 ms at 48 Hz). "
+                         "e.g. 1. Phase lag punishes over-high gains.")
 # ── Action-noise decay (settle late-stage exploration) ────────────────────────
 parser.add_argument("--action-noise-decay", action="store_true",
                     help="Linearly decay TD3 action-noise sigma over this "
@@ -73,6 +118,26 @@ parser.add_argument("--resume", default=None, metavar="MODEL_ZIP",
                          "Actor/critic weights are restored; replay buffer starts cold. "
                          "--steps is the TOTAL target (e.g. 1000000 to reach 1M "
                          "when resuming a 500k run).")
+
+# ── TD3 optimisation knobs (defaults = legacy HP, so old runs reproduce) ───────
+# Exposed for stability-focused retrains: under noisy observations TD3 can diverge
+# (eval reward oscillates), and the main levers are a lower / decaying learning
+# rate, a larger batch, and a fixed seed for best-of-N selection. None of these
+# touch the reward, the actor architecture, or the plant.
+parser.add_argument("--lr", type=float, default=None,
+                    help="Initial learning rate (default: 1e-3).")
+parser.add_argument("--lr-final", type=float, default=None,
+                    help="If set, LINEARLY decay LR from --lr to this over the "
+                         "(remaining) steps of this invocation. Resume-aware.")
+parser.add_argument("--batch-size", type=int, default=None,
+                    help="TD3 batch size (default: 128). Larger = smoother "
+                         "updates under noisy observations.")
+parser.add_argument("--gradient-steps", type=int, default=None,
+                    help="Gradient steps per env step (default: 1).")
+parser.add_argument("--buffer-size", type=int, default=None,
+                    help="Replay buffer capacity (default: 500000).")
+parser.add_argument("--seed", type=int, default=None,
+                    help="Global + model seed for reproducible best-of-N runs.")
 args = parser.parse_args()
 
 # ── Run directory ──────────────────────────────────────────────────────────────
@@ -102,6 +167,26 @@ HP = dict(
 )
 if args.steps:
     HP["total_timesteps"] = args.steps
+if args.lr is not None:
+    HP["learning_rate"] = args.lr
+if args.batch_size is not None:
+    HP["batch_size"] = args.batch_size
+if args.gradient_steps is not None:
+    HP["gradient_steps"] = args.gradient_steps
+if args.buffer_size is not None:
+    HP["buffer_size"] = args.buffer_size
+
+
+def linear_lr_schedule(lr_start, lr_end):
+    """SB3 schedule: progress_remaining 1→0, so LR goes lr_start→lr_end."""
+    lr_start, lr_end = float(lr_start), float(lr_end)
+    return lambda progress_remaining: lr_end + progress_remaining * (lr_start - lr_end)
+
+
+# Resolve the learning-rate object once: a float (constant) or a linear schedule.
+LR = HP["learning_rate"]
+if args.lr_final is not None:
+    LR = linear_lr_schedule(HP["learning_rate"], args.lr_final)
 
 
 class ActionNoiseDecayCallback(BaseCallback):
@@ -166,6 +251,20 @@ def make_env(eval_mode: bool = False):
             sustained_episode_prob      = (0.0 if eval_mode else args.sustained_episode_prob),
             sustained_dist_mag_range    = (args.sustained_dist_mag_min,
                                            args.sustained_dist_mag_max),
+            wind_episode_prob           = (0.0 if eval_mode else args.wind_episode_prob),
+            wind_mean_torque_range      = (args.wind_mean_torque_min,
+                                           args.wind_mean_torque_max),
+            wind_gust_sigma             = args.wind_gust_sigma,
+            wind_max_torque             = args.wind_max_torque,
+            reward_w5                   = (0.0 if eval_mode else args.reward_w5),
+            reward_w6                   = (0.0 if eval_mode else args.reward_w6),
+            randomize_dynamics          = args.randomize_dynamics and not eval_mode,
+            mass_frac_range             = (args.mass_frac_min,    args.mass_frac_max),
+            inertia_frac_range          = (args.inertia_frac_min, args.inertia_frac_max),
+            # Noise + latency are real-system properties → applied in eval too.
+            sensor_noise_att            = args.sensor_noise_att,
+            sensor_noise_rate           = args.sensor_noise_rate,
+            control_latency_steps       = args.control_latency_steps,
         )
     else:
         env = PX4GainTunerEnv(
@@ -202,9 +301,17 @@ def main():
         sys.exit(0)
     signal.signal(signal.SIGINT, _shutdown)
 
+    # ── Seeding (reproducible best-of-N) ────────────────────────────────────────
+    if args.seed is not None:
+        set_random_seed(args.seed)
+        print(f"[TRAIN] Global seed: {args.seed}")
+
     # ── Environment ────────────────────────────────────────────────────────────
     env      = make_env()
     eval_env = make_env(eval_mode=True)
+    if args.seed is not None:
+        env.reset(seed=args.seed)
+        eval_env.reset(seed=args.seed + 10_000)
 
     # ── Action noise (TD3 exploration) ─────────────────────────────────────────
     n_actions    = env.action_space.shape[0]
@@ -226,11 +333,26 @@ def main():
         model.action_noise      = action_noise
         model.tensorboard_log   = LOG_DIR
         model.verbose           = 1
+        # Override optimisation knobs on the resumed model (the zip restores the
+        # OLD lr/batch/grad-steps/buffer; re-apply the requested ones so a
+        # stability retrain actually takes effect).
+        if args.seed is not None:
+            model.set_random_seed(args.seed)
+        if args.batch_size is not None:
+            model.batch_size = HP["batch_size"]
+        if args.gradient_steps is not None:
+            model.gradient_steps = HP["gradient_steps"]
+        if args.lr is not None or args.lr_final is not None:
+            model.learning_rate = LR
+            model._setup_lr_schedule()   # rebuilds model.lr_schedule from learning_rate
+            print(f"[TRAIN] LR override applied to resumed model"
+                  + (f" (decay → {args.lr_final})" if args.lr_final is not None else ""))
     else:
         model = TD3(
             policy          = "MlpPolicy",
             env             = env,
-            learning_rate   = HP["learning_rate"],
+            learning_rate   = LR,
+            seed            = args.seed,
             buffer_size     = HP["buffer_size"],
             batch_size      = HP["batch_size"],
             gamma           = HP["gamma"],

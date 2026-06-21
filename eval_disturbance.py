@@ -72,6 +72,16 @@ parser.add_argument("--out-dir", default=None,
                     help="Directory for results. Auto-generated if not given.")
 parser.add_argument("--no-plots", action="store_true", help="Skip matplotlib plots")
 parser.add_argument("--seed", type=int, default=42)
+# Off-nominal / realistic-system knobs (default 0/off = nominal physics, so
+# existing frozen results reproduce unchanged). Match noiselat training when set.
+parser.add_argument("--randomize-dynamics", action="store_true",
+                    help="Randomize mass/inertia per episode (off-nominal airframe).")
+parser.add_argument("--sensor-noise-att", type=float, default=0.0,
+                    help="Gaussian attitude sensor noise std (rad).")
+parser.add_argument("--sensor-noise-rate", type=float, default=0.0,
+                    help="Gaussian rate sensor noise std (rad/s).")
+parser.add_argument("--control-latency-steps", type=int, default=0,
+                    help="Actuation delay in control steps.")
 args = parser.parse_args()
 
 RUN_BASELINE = not args.rl_only
@@ -109,6 +119,10 @@ ENV_KWARGS = dict(
     disturbance_step      = args.dist_step if DIST_ACTIVE else None,
     disturbance_magnitude = args.dist_magnitude,
     disturbance_duration  = args.dist_duration,
+    randomize_dynamics    = args.randomize_dynamics,
+    sensor_noise_att      = args.sensor_noise_att,
+    sensor_noise_rate     = args.sensor_noise_rate,
+    control_latency_steps = args.control_latency_steps,
 )
 
 

@@ -34,12 +34,16 @@ Physics note:
 import argparse
 import csv
 import os
+import random
 import subprocess
 import sys
 import time
 
 
 DEFAULT_MODEL = "f450_rl_0"  # PX4 spawns as <PX4_SIM_MODEL>_<px4_instance>
+RESULTS_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "test_results"))
+DEFAULT_EVENT_LOG = os.path.join(RESULTS_DIR, "ab_events.csv")
 
 
 def detect_world():
@@ -132,17 +136,24 @@ def parse_args():
                     help="Use the in-envelope sequence (<=0.40 single / "
                          "0.20+0.20 combined, no 0.30 sharp roll, calm tail). "
                          "Use this for a fair baseline-vs-RL A/B.")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="Deterministically jitter event start times by +/-1.5 s "
+                         "(magnitudes unchanged). Same seed => identical sequence, "
+                         "so a baseline and an adaptive run form a matched pair "
+                         "while different seeds give distinct in-envelope kicks.")
     ap.add_argument("--dry-run",  action="store_true",
                     help="Print the sequence without executing")
-    ap.add_argument("--event-log", default=None,
-                    help="Write a CSV of disturbance events for A/B alignment: "
-                         "event,t_apply_s,t_clear_s,torque_x,torque_y "
-                         "(t_*_s = seconds since this script started).")
+    ap.add_argument("--event-log", default=DEFAULT_EVENT_LOG,
+                    help=f"Write a CSV of disturbance events for A/B alignment: "
+                         f"event,t_apply_s,t_clear_s,torque_x,torque_y "
+                         f"(t_*_s = seconds since this script started). "
+                         f"Default: {DEFAULT_EVENT_LOG}")
     return ap.parse_args()
 
 
 def write_event_log(path, events):
     """events: list of dicts with event,t_apply_s,t_clear_s,torque_x,torque_y."""
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["event", "t_apply_s", "t_clear_s", "torque_x", "torque_y"])
@@ -226,6 +237,23 @@ def run_sequence(sequence, model_name, world, dry_run=False, event_log=None):
                          sorted(ev_rows.values(), key=lambda e: e["t_apply_s"]))
 
 
+def jitter_sequence(sequence, seed, max_jitter=1.5):
+    """Shift each event's start time by a deterministic +/-max_jitter s.
+
+    Magnitudes and durations are untouched, so every jittered run stays in the
+    same envelope; only the timing differs. The same seed reproduces the same
+    sequence exactly, which is what makes a baseline run and an adaptive run a
+    matched pair. Order is preserved (events are re-sorted by start time).
+    """
+    rng = random.Random(seed)
+    out = []
+    for label, t0, dur, tx, ty in sequence:
+        dt = rng.uniform(-max_jitter, max_jitter)
+        out.append((label, max(1.0, t0 + dt), dur, tx, ty))
+    out.sort(key=lambda e: e[1])
+    return out
+
+
 def main():
     args = parse_args()
 
@@ -238,6 +266,10 @@ def main():
         sequence = SAFE_SEQUENCE
     else:
         sequence = DEFAULT_SEQUENCE
+
+    if args.seed is not None:
+        sequence = jitter_sequence(sequence, args.seed)
+        print(f"[DISTURB] Seed {args.seed}: event start times jittered +/-1.5 s.")
 
     try:
         run_sequence(sequence, args.model, args.world,
